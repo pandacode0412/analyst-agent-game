@@ -1,0 +1,6 @@
+playwright==1.55.0
+opencv-python-headless==4.11.0.86
+numpy>=1.26,<3
+PyYAML>=6.0,<7
+XlsxWriter>=3.2,<4
+psycopg[binary]>=3.2,<3.4

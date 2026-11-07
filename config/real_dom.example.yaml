@@ -1,0 +1,19 @@
+# TEMPLATE ONLY. Replace every selector after inspecting an authorized page.
+# Confirm table labels, phase values, round IDs, shoe IDs and final results on
+# independently labeled captures before enabling trusted round IDs.
+source_id: approved-provider-01
+url: https://example.com
+viewport: {width: 1536, height: 864}
+ids_reset_per_shoe: true
+phase_map: {BETTING: BETTING, DEALING: DEALING, RESULT: RESULT}
+result_map: {BANKER: BANKER, PLAYER: PLAYER, TIE: TIE}
+tables:
+  - id: B51
+    selectors:
+      root: "[data-table-id='B51']"
+      label: ".table-name"
+      phase: ".game-phase"
+      round_id: ".round-id"
+      shoe_id: ".shoe-id"
+      result: ".final-result"
+      revision: ".roadmap-revision"

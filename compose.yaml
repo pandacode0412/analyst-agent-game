@@ -1,0 +1,109 @@
+# PostgreSQL-backed on-demand jobs. No automatic wagering or login.
+x-agent-env: &agent_env
+  PGHOST: db
+  PGPORT: "5432"
+  PGDATABASE: ${POSTGRES_DB:-baccarat}
+  PGUSER: ${POSTGRES_USER:-baccarat}
+  PGPASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+
+x-agent: &agent
+  build: .
+  init: true
+  env_file:
+    - .env
+  environment: *agent_env
+  working_dir: /app
+  volumes:
+    - ./output:/app/output
+    - ./config:/app/config:ro
+    - ./assets:/app/assets:ro
+    - ./samples:/app/samples:ro
+  restart: "no"
+
+x-db-ready: &db_ready
+  db:
+    condition: service_healthy
+
+services:
+  db:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-baccarat}
+      POSTGRES_USER: ${POSTGRES_USER:-baccarat}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+
+  preview:
+    <<: *agent
+    command: ["python", "-m", "agent.cli", "preview"]
+
+  monitor-image:
+    <<: *agent
+    depends_on: *db_ready
+    command: ["python", "-m", "agent.cli", "monitor-image", "--iterations", "3"]
+
+  capture-browser:
+    <<: *agent
+    command: ["python", "-m", "agent.cli", "capture-browser", "--url", "${APP_URL:-https://example.com}"]
+
+  monitor-browser:
+    <<: *agent
+    depends_on: *db_ready
+    command: ["python", "-m", "agent.cli", "monitor-browser", "--url", "${APP_URL:-https://example.com}", "--iterations", "3"]
+
+  monitor-dom:
+    <<: *agent
+    depends_on: *db_ready
+    command: ["python", "-m", "agent.cli", "monitor-dom", "--config", "config/real_dom.example.yaml", "--iterations", "3"]
+
+  replay-export-demo:
+    <<: *agent
+    depends_on: *db_ready
+    command: ["python", "-m", "agent.cli", "replay-export", "--input", "samples/structured_export_demo.jsonl", "--source-id", "DEMO_STRUCTURED", "--tables", "S01", "--trusted-round-ids"]
+
+  import-demo:
+    <<: *agent
+    depends_on: *db_ready
+    command: ["python", "-m", "agent.cli", "ingest-csv", "--input", "samples/verified_demo.csv"]
+
+  import-gaps-demo:
+    <<: *agent
+    depends_on: *db_ready
+    command: ["python", "-m", "agent.cli", "ingest-gaps", "--input", "samples/gaps_demo.csv"]
+
+  report:
+    <<: *agent
+    depends_on: *db_ready
+    command: ["python", "-m", "agent.cli", "report", "--date", "${REPORT_DATE:-2026-10-19}"]
+
+  test:
+    <<: *agent
+    depends_on: *db_ready
+    environment:
+      <<: *agent_env
+      RUN_PG_TESTS: "1"
+      RUN_BROWSER_TESTS: "1"
+    command: ["python", "-m", "unittest", "discover", "-s", "tests", "-v"]
+
+  migrate-sqlite:
+    <<: *agent
+    depends_on: *db_ready
+    volumes:
+      - ./data:/app/data:ro
+      - ./output:/app/output
+      - ./config:/app/config:ro
+      - ./assets:/app/assets:ro
+      - ./samples:/app/samples:ro
+    command: ["python", "tools/migrate_sqlite_to_postgres.py", "--sqlite", "data/agent.sqlite3"]
+
+volumes:
+  pg_data:

@@ -1,0 +1,14 @@
+# TEMPLATE ONLY — update on a cropped, authorized screenshot taken at a fixed viewport.
+# The following ROIs approximate the OLD user-supplied 1536x864 screenshot.
+# They are NOT independently validated and may need correction.
+# Coordinates point to ROADMAP below video, not to video or bet amounts.
+# Never assume every colored marker == a newly completed round.
+tables:
+  - {id: B51, x: 288, y: 428, width: 264, height: 100}
+  - {id: B20, x: 566, y: 428, width: 264, height: 100}
+  - {id: B07, x: 842, y: 428, width: 263, height: 100}
+  - {id: D29, x: 1119, y: 428, width: 265, height: 100}
+  - {id: J49, x: 288, y: 676, width: 264, height: 102}
+  - {id: U12, x: 566, y: 676, width: 264, height: 102}
+  - {id: J40, x: 842, y: 676, width: 263, height: 102}
+  - {id: B14, x: 1119, y: 676, width: 265, height: 102}
