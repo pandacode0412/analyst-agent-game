@@ -27,6 +27,23 @@ class FSMTests(unittest.TestCase):
         for i,phase in enumerate(["BETTING","DEALING","RESULT","RESULT"]):
             self.assertIsNone(v.accept(ev(f"f{i}",phase,"BANKER","hist-B",trusted=False)))
 
+    def test_repeated_phase_frames_still_confirm_once(self):
+        v = ConservativeRoundValidator("B51")
+        frames = [("f1", "BETTING"), ("f2", "BETTING"), ("f3", "DEALING"), ("f4", "DEALING"), ("f5", "DEALING")]
+        for fid, phase in frames:
+            self.assertIsNone(v.accept(ev(fid, phase)))
+        self.assertIsNone(v.accept(ev("f6", "RESULT", "BANKER", "hist-B")))
+        self.assertIsNotNone(v.accept(ev("f7", "RESULT", "BANKER", "hist-B")))
+        self.assertIsNone(v.accept(ev("f8", "RESULT", "BANKER", "hist-B")))
+
+    def test_dealing_for_another_round_breaks_continuity(self):
+        v = ConservativeRoundValidator("B51")
+        v.accept(ev("f1", "BETTING"))
+        v.accept(ev("f2", "DEALING"))
+        v.accept(ev("f3", "DEALING", round_id="R999"))
+        self.assertIsNone(v.accept(ev("f4", "RESULT", "BANKER", "hist-B", round_id="R999")))
+        self.assertIsNone(v.accept(ev("f5", "RESULT", "BANKER", "hist-B", round_id="R999")))
+
     def test_gap_resets_state(self):
         v = ConservativeRoundValidator("B51")
         v.accept(ev("f1","BETTING"))

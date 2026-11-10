@@ -20,7 +20,7 @@
 | T14 | Shoe change or roadmap reset | Rebaseline before confirmation |
 | T15 | Same source key with conflicting data | Quarantine; no silent correction |
 
-The 30 current tests and CLI demo cover only parts of T01–T08, PostgreSQL storage behavior, legacy migration, report export, red-window boundary and gap rules, mixed-source rejection, a synthetic structured candidate-to-storage flow, and a Chromium DOM-reader smoke test. Fourteen PostgreSQL integration tests run when RUN_PG_TESTS=1 and one browser smoke test runs when RUN_BROWSER_TESTS=1; Compose supplies both. T09–T15 still need a validated named-source adapter, real labeled evidence, and held-out integration tests. The full acceptance matrix is in docs/14-acceptance.md.
+The 72 current tests and CLI demo cover only parts of T01–T08, PostgreSQL storage behavior, legacy migration, report export, red-window boundary and gap rules, mixed-source rejection, a synthetic structured candidate-to-storage flow, and a Chromium DOM-reader smoke test. Seventeen PostgreSQL integration tests run when RUN_PG_TESTS=1 and one browser smoke test runs when RUN_BROWSER_TESTS=1; Compose supplies both. T11 (missing-table/capture gap), T12 (restart), and T15 (conflict quarantine) have synthetic structured-source tests; T02 is covered at the candidate-pipeline level by a 100-identical-frame test and a check that marker paths do not reference round writers. T09–T15 all still need a validated named-source adapter, real labeled evidence, and held-out integration tests before they count as accepted. The full acceptance matrix is in docs/14-acceptance.md.
 
 ## Commands
 
@@ -47,4 +47,4 @@ Start with 200–500 ended rounds across 3–6 tables and varied phases, outcome
 - Time appears seven hours off: distinguish UTC storage from Asia/Ho_Chi_Minh report time.
 - Import error for cv2/numpy/yaml: install requirements.txt; it is an environment problem, not a passed business test.
 
-In the rebuilt Docker image, all 30 tests passed against PostgreSQL 17 and Chromium. Without a running database or Chromium, fifteen integration tests skip and the other fifteen run. docker compose run --rm test enables both integration groups on a machine with Docker. The generated preview, structured export, and sample Excel are synthetic; real-source accuracy still needs separate evaluation.
+In the rebuilt Docker image, all 72 tests passed against PostgreSQL 17 and Chromium. Without a running database or Chromium, twenty-one integration tests skip and the other fifty-one run. docker compose run --rm test enables both integration groups on a machine with Docker. The generated preview, structured export, and sample Excel are synthetic; real-source accuracy still needs separate evaluation.

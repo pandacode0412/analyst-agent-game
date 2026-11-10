@@ -4,20 +4,17 @@
 
 > This project does not place bets or provide reliable next-round predictions. A screenshot or a roadmap marker does not prove that a new round has ended. Color detections remain OBSERVED_NOT_CONFIRMED. The sample CSV contains synthetic rounds, not data from a real website.
 
-The maintained documentation is README.md, AGENTS.md, the Markdown files in docs/, and the schema notes in samples/. The combined Markdown, DOCX, and PDF handbooks are generated in English from README.md and docs/.
+The maintained documentation is README.md, AGENTS.md, the Markdown files in docs/, and the schema notes in samples/. The combined Markdown handbook FULL_DEVELOPER_GUIDE.md is generated in English from README.md and docs/.
 
 **Version baseline:** CPython 3.12.x, Playwright 1.55.0, and PostgreSQL 17. See [the complete direct-dependency inventory and version policy](docs/16-dependencies-and-version-policy.md). Several Python packages still use version ranges, and indirect packages are not locked; the current files are not yet a reproducible production dependency lock.
 
-**Target operator question:** For each authorized table, between 07:00 and 21:00 local time, how many verified red-result streaks first reach 13 consecutive rounds? The read-only `report-red-window` command now counts this from stored confirmed rounds when the operator supplies a source-validated red-to-outcome mapping. A maximal streak is counted once when its 13th result occurs in the window; a streak of 14 is not counted twice. See docs/07-statistics-and-excel.md for boundary and gap rules. The current POC does not automatically verify results from a real site or measure complete coverage.
+**Target operator question:** For each authorized table, within an operator-chosen local window (default 07:00–21:00), how many verified Banker runs and Player runs first reach 13 consecutive results, counted once with Tie breaking the run and once with Tie skipped? The full definition is in docs/07-statistics-and-excel.md. The read-only `report-streaks` command answers this from stored confirmed rounds and prints a headline such as "Banker 3, Player 2, total 5 events across 12 tables" for each Tie policy. The older `report-red-window` command remains for one side with the strict policy. A maximal streak is counted once when its 13th result occurs in the window; a streak of 14 is not counted twice. See docs/07-statistics-and-excel.md for boundary and gap rules. The current POC does not automatically verify results from a real site or measure complete coverage.
 
-To rebuild the handbooks after editing their sources:
+To rebuild the handbook after editing its sources (standard library only):
 
-    python3 -m pip install -r docs-requirements.txt
     python3 tools/build_full_guide.py
-    python3 tools/build_manual_docx.py
-    python3 tools/build_manual_pdf.py
 
-The generated files are FULL_DEVELOPER_GUIDE.md, BACCARAT_AGENT_DEVELOPER_GUIDE.docx, and BACCARAT_AGENT_DEVELOPER_GUIDE.pdf. The English demo Excel workbook is BACCARAT_Excel_Demo_Formatted.xlsx.
+The English demo Excel workbook is BACCARAT_Excel_Demo_Formatted.xlsx.
 
 ## What works today
 
@@ -32,9 +29,10 @@ The generated files are FULL_DEVELOPER_GUIDE.md, BACCARAT_AGENT_DEVELOPER_GUIDE.
 | Store observation gaps | Implemented; repeat imports are not idempotent yet |
 | Compute historical Banker/Player/Tie counts, strict streaks, and Wilson 95% intervals | Implemented from confirmed rounds |
 | Export a five-sheet Excel workbook | Implemented |
+| Report Banker and Player runs reaching 13 in a chosen window, both Tie policies, with an all-table headline (`report-streaks`) | Implemented for stored confirmed rounds; coverage remains unknown |
 | Export a separate 07:00–21:00 Excel count of verified 13-red events | Implemented for stored confirmed rounds with an explicit red mapping; coverage remains unknown |
 | Validate and persist structured round evidence | Connected to a transactional writer with evidence, gaps, checkpoints, and conflict quarantine; source trust still requires review |
-| Tests | 30 tests passed in Docker with PostgreSQL and Chromium; fourteen require a server, one requires Chromium, and fifteen run without either |
+| Tests | 72 tests passed in Docker with PostgreSQL and Chromium; seventeen require a server, one requires Chromium, three end-to-end simulation tests require both, and fifty-one run without either |
 | Automatically confirm every round on a real website | Generic DOM worker exists; no named website adapter or accuracy evidence yet |
 | Continuous operation | `monitor-dom --iterations 0` loops with reconnect attempts; no production soak or managed session lifecycle yet |
 | Automatic login, CAPTCHA bypass, private API access, or betting | Outside scope |
@@ -74,14 +72,14 @@ See docs/02-installation.md for host setup and the exact behavior of each comman
 | agent/adapters/; agent/coordinator.py; agent/live_store.py | Structured export and DOM adapters, per-table coordination, and durable source writes |
 | agent/storage.py; migrations/ | PostgreSQL connection, transactional writes, and versioned schema |
 | agent/analytics.py; agent/report.py | Historical metrics and Excel export |
-| agent/red_window.py; agent/red_report.py | Verified 13-red window counting and separate Excel export |
+| agent/streak_window.py; agent/streak_report.py | Banker/Player reached-13 counting for both Tie policies, headline, and Excel export |
+| agent/red_window.py; agent/red_report.py | Older one-side 13-red window counting and separate Excel export |
 | config/ | Synthetic and unverified real-lobby ROI examples |
 | assets/synthetic_lobby.png | Synthetic image for learning and tests |
 | samples/ | Synthetic verified-round CSV, gap CSV, and structured export fixtures |
 | tests/ | Unit tests |
 | docs/ | Architecture, implementation, data, operations, and acceptance criteria |
 | tools/build_full_guide.py | Rebuilds the combined Markdown handbook |
-| tools/build_manual_docx.py; tools/build_manual_pdf.py | Rebuild the English DOCX and PDF handbooks |
 | tools/migrate_sqlite_to_postgres.py | One-time legacy SQLite import into empty PostgreSQL |
 
 ## Reading order
@@ -165,6 +163,10 @@ A single lobby screenshot covers only visible tables. Pagination, scrolling, laz
 | observations | Red/blue marker counts seen in an ROI at a time | No |
 | confirmed_rounds | One final result with a unique identity and verified source | Yes |
 | observation_gaps | A known interruption that may break streak continuity | Used to break strict streaks |
+| source_round_evidence | Two frame IDs and evidence references for each source-pipeline round | No; audit trail |
+| source_conflicts | Quarantined payloads that disagree with a stored round | No; awaits review |
+| source_gaps | Idempotent per-source gap events (also copied once into observation_gaps) | Indirectly, through observation_gaps |
+| processed_source_frames, worker_checkpoints | Replay prevention and restart detection per source/table | No |
 
 ## Prototype and target system
 
@@ -240,7 +242,7 @@ The db health check must pass before jobs that need storage start. PostgreSQL da
   This command reads confirmed rounds only. It marks observation coverage UNKNOWN and cannot establish that no rounds were missed.
 
 - replay-export-demo processes four synthetic structured frames and stores one evidence-backed confirmed round on first run. Keep its data separate from real sources.
-- test runs 30 tests: fourteen PostgreSQL integration tests in isolated temporary schemas, one Chromium DOM-reader smoke test, and fifteen source-independent tests. The server must be healthy.
+- test runs 72 tests: seventeen PostgreSQL integration tests in isolated temporary schemas, one Chromium DOM-reader smoke test, three end-to-end simulated-site tests that need both, and fifty-one source-independent tests. The server must be healthy.
 
 Keep synthetic and real data in separate databases or Compose projects.
 
@@ -262,7 +264,7 @@ The tool takes a consistent read-only snapshot of the SQLite file and imports ob
 
 ## Host Python without Docker
 
-Use a Python 3.12 virtual environment, install Python dependencies from requirements.txt, and provide a PostgreSQL 17 server. Set PGHOST, PGPORT, PGDATABASE, PGUSER, and PGPASSWORD, or DATABASE_URL. For the fourteen database integration tests also set RUN_PG_TESTS=1. Set RUN_BROWSER_TESTS=1 only when Playwright Chromium and its system libraries are installed. Without either dependency, those fifteen tests skip and the other fifteen still run. Compose is the documented runtime path and enables both integration groups. The current version ranges mean a host install may differ from another install; see docs/16-dependencies-and-version-policy.md before treating it as a reproducible release.
+Use a Python 3.12 virtual environment, install Python dependencies from requirements.txt, and provide a PostgreSQL 17 server. Set PGHOST, PGPORT, PGDATABASE, PGUSER, and PGPASSWORD, or DATABASE_URL. For the fifteen database integration tests also set RUN_PG_TESTS=1. Set RUN_BROWSER_TESTS=1 only when Playwright Chromium and its system libraries are installed. Without either dependency, those twenty-one tests skip and the other fifty-one still run. Compose is the documented runtime path and enables both integration groups. The current version ranges mean a host install may differ from another install; see docs/16-dependencies-and-version-policy.md before treating it as a reproducible release.
 
 For the structured export and DOM source path, see docs/17-source-integration.md. `config/real_dom.example.yaml` contains placeholder selectors and `https://example.com`; it is not a ready Baccarat source.
 
@@ -272,7 +274,7 @@ For the structured export and DOM source path, see docs/17-source-integration.md
 
 ## agent/cli.py
 
-argparse provides preview, monitor-image, capture-browser, monitor-browser, monitor-dom, replay-export, ingest-csv, ingest-gaps, report, and report-red-window. Docker Compose reuses the same image with different commands. The CLI never logs in or places bets.
+argparse provides preview, monitor-image, capture-browser, monitor-browser, monitor-dom, replay-export, ingest-csv, ingest-gaps, report, report-red-window, and report-streaks. Docker Compose reuses the same image with different commands. The CLI never logs in or places bets.
 
 | Command | Input | Output | Writes confirmed rounds? |
 |---|---|---|---|
@@ -286,6 +288,7 @@ argparse provides preview, monitor-image, capture-browser, monitor-browser, moni
 | ingest-gaps | Gap CSV | PostgreSQL observation_gaps | No |
 | report | Date and PostgreSQL database | Five-sheet Excel workbook | No |
 | report-red-window | Date, source, explicit RED mapping, and PostgreSQL database | Three-sheet 07:00–21:00 reached-13 Excel workbook | No |
+| report-streaks | Date, source, optional window and color label, PostgreSQL database | Printed headline and four-sheet Banker/Player reached-13 workbook for both Tie policies | No |
 
 Use python -m agent.cli <command> --help for CLI options.
 
@@ -297,7 +300,7 @@ vision.py loads images as BGR, converts crops to HSV, thresholds red/blue, filte
 
 ## agent/browser.py
 
-capture_page opens an internal Playwright Chromium page, waits for DOM content and a fixed delay, then saves one screenshot. monitor_browser opens one page and captures N frames; each is decoded, analyzed by ROI, and written as marker observations. monitor_dom_browser uses a configurable DOM reader, cropped table evidence, and the source coordinator. It can loop when iterations is zero, records errors as gaps, and retries navigation. It has no persistent login/session workflow or validated named Baccarat layout.
+capture_page opens an internal Playwright Chromium page, waits for DOM content and a fixed delay, then saves one screenshot. monitor_browser opens one page and captures N frames; each is decoded, analyzed by ROI, and written as marker observations. monitor_dom_browser uses a configurable DOM reader, cropped table evidence, and the source coordinator. It can loop when iterations is zero, records errors as gaps, and retries navigation. When the DOM config has a `session` block, agent/session.py loads `secrets/session_state.json`, detects logged-out pages, re-logs in only when no CAPTCHA appears, and records LOGGED_OUT, CAPTCHA_REQUIRED, or LOGIN_FAILED gaps (docs/17-source-integration.md). It has no validated named Baccarat layout.
 
 ## agent/round_validator.py
 
@@ -319,7 +322,7 @@ report.py writes Summary, Rounds, Streaks, Quality, and Methodology sheets throu
 
 ## Tools, tests, and deployment files
 
-agent/red_window.py counts one event when a verified strict red run first reaches 13 in the local 07:00–21:00 window, using up to 13 earlier events to handle a run crossing 07:00. agent/red_report.py exports the separate Excel workbook, including source evidence references when available. The caller must supply a source and BANKER or PLAYER as its validated red mapping; the workbook marks coverage UNKNOWN. A table ID shared by multiple sources is rejected until the schema gains a source namespace. tools/generate_synthetic_lobby.py creates a harmless six-table learning image. tools/build_full_guide.py combines maintained Markdown files. tools/migrate_sqlite_to_postgres.py imports a legacy SQLite snapshot into an empty PostgreSQL database. The test suite has 30 tests: fourteen PostgreSQL integration tests, one Chromium reader smoke test, and fifteen source-independent tests. Dockerfile packages Python, Psycopg, migrations, and Playwright Chromium. compose.yaml adds a PostgreSQL service with a named volume and health check; data/ is mounted read-only only for legacy import.
+agent/red_window.py counts one event when a verified strict red run first reaches 13 in the local 07:00–21:00 window, using up to 13 earlier events to handle a run crossing 07:00. agent/red_report.py exports the separate Excel workbook, including source evidence references when available. The caller must supply a source and BANKER or PLAYER as its validated red mapping; the workbook marks coverage UNKNOWN. A table ID shared by multiple sources is rejected until the schema gains a source namespace. tools/generate_synthetic_lobby.py creates a harmless six-table learning image. tools/build_full_guide.py combines maintained Markdown files. tools/migrate_sqlite_to_postgres.py imports a legacy SQLite snapshot into an empty PostgreSQL database. The test suite has 72 tests: seventeen PostgreSQL integration tests, one Chromium reader smoke test, three end-to-end simulated-site tests (tests/test_live_simulation.py), and fifty-one source-independent tests. Dockerfile packages Python, Psycopg, migrations, and Playwright Chromium. compose.yaml adds a PostgreSQL service with a named volume and health check; data/ is mounted read-only only for legacy import.
 
 ## Example call paths
 
@@ -416,6 +419,8 @@ This is a workflow example, not a claim about a particular site's display timing
 **A, preferred:** published final result plus trustworthy source round ID from the UI or a permitted official export, with consistent roadmap change.
 
 **B, requiring separate validation:** a complete phase sequence and a tested roadmap mapping with no observation gap, using a persistent shoe/session-local sequence ID.
+
+**B2, published shoe counters (requires separate validation):** some lobbies publish, as text, per-shoe counters `[total, Banker, Player, Tie]` but no round ID. A round is identified as `(source, table, local shoe namespace, total)`. A new round is accepted only when `total` rises by exactly 1 **and** exactly one of Banker/Player/Tie rises by exactly 1, seen on two independent frames after a BETTING (countdown) and DEALING frame of the same shoe position. A jump of more than one, a decrease (new shoe), an inconsistent delta, a missing card, or a changed card identity is UNKNOWN/GAP. The local shoe namespace is created when a shoe is first observed or after any break, so it never merges two observation periods; rounds missed while not observing are never inferred. See docs/17-source-integration.md.
 
 **C, unconfirmed:** marker count, pixel differences, screenshot timestamps, resize, or hash changes alone. Keep these as observations.
 
@@ -556,9 +561,44 @@ A run of 13 Banker outcomes does not make Player the guaranteed next outcome. Th
 
 The synthetic CSV includes a B51 run of 13 Banker rounds, followed by Tie, then Banker and Player. The report gives max_banker_strict=13 and streak_13_banker=1.
 
-## Target report: red streaks from 07:00 to 21:00
+## Requested metric: 13-in-a-row events (agreed 2026-11-07)
 
-This is the requested operational metric. It is implemented by the separate `report-red-window` command for stored confirmed rounds, **not by the current daily workbook**. The existing `streak_13_banker` is a whole-day Banker metric; it cannot be presented as the requested red count without a verified source-specific color mapping and time-window calculation.
+This is the operator's target question. It supersedes the narrower red-only description below as the requirement. It is implemented by `agent/streak_window.py`, `agent/streak_report.py`, and the read-only `report-streaks` command for stored confirmed rounds; it still has no real-source validation or coverage ledger.
+
+- **Sides.** Count runs of verified `BANKER` results and runs of verified `PLAYER` results separately. Red and blue are display colors; the stored truth is the published final outcome. Because both sides are counted, a verified color mapping is needed only to *label* a side as red or blue in the workbook, not to compute the counts. Until the mapping is verified, label the columns BANKER and PLAYER and show the color mapping as `UNVERIFIED`. Tie runs are not counted.
+- **Threshold.** A run produces **one event when its 13th result finishes**. A run of 14 or 20 is still one event. This is `reached_13`; an `exactly_13` statistic is not requested.
+- **Two Tie policies, both reported under distinct names:**
+
+  | Metric name | Tie | GAP, UNKNOWN, untrusted ID, source change, shoe change |
+  |---|---|---|
+  | `reached_13_strict_v1` | Breaks the run | Breaks the run |
+  | `reached_13_tie_transparent_v1` | Skipped: neither breaks the run nor adds to its length (matches how a Big Road usually draws Tie) | Breaks the run |
+
+  Opposite-side results break the run under both policies. A new shoe breaks the run under both policies unless the source survey proves that the source's own roadmap continues across shoes. Never present one policy's number under the other's name.
+- **Window.** The operator chooses a local half-open window `[start, end)` within one calendar date in `Asia/Ho_Chi_Minh`. The default is `[07:00, 21:00)`; `[00:00, 24:00)` (the whole day) is allowed. `start` must be earlier than `end`; windows crossing midnight are out of scope for version 1. The event belongs to the window containing its 13th result, even when the run began before `start`. Runs are tracked across the window boundaries so a run started before `start` is not truncated.
+- **Lookback.** To decide continuity at `start`, read prior events per table and side until either 13 counted results or a breaking event is found. Under the tie-transparent policy, Ties do not count toward those 13, so a fixed "last 13 rows" lookback is insufficient.
+- **Headline summary.** The first thing the operator reads is one line per Tie policy for the whole day's window across all observed tables, for example:
+
+      Date 2026-11-07, window 07:00–21:00 (Asia/Ho_Chi_Minh), source <source>, coverage UNKNOWN
+      Tie breaks run (reached_13_strict_v1):           Banker 3, Player 2, total 5 events across 12 tables
+      Tie skipped   (reached_13_tie_transparent_v1):   Banker 4, Player 2, total 6 events across 12 tables
+
+  "Across N tables" is the number of tables with at least one confirmed round in the window, not the number of tables on the site. The total is Banker plus Player events; each event belongs to one table. The headline must always carry the coverage status, so a reader does not mistake an observed count for a complete count. All report text (headline, sheet names, column headers, methodology) is in English.
+- **Output.** For each source/table: confirmed rounds, recorded gaps, the local time (Asia/Ho_Chi_Minh, `YYYY-MM-DD HH:MM:SS`) of the first and last confirmed round in the window, and the event count per side and Tie policy. Per side and policy: the sum across tables (table-level events are never merged into a cross-table run). For each event: table, side, policy, run start and 13th-result local times, minutes from run start to the 13th result, the short round numbers ("round #") and full stored round keys of the first and 13th rounds, UTC times, source, and evidence references when stored. A short round number is the last segment of the stored key, for example the shoe-local position. Coverage stays `UNKNOWN` until a coverage ledger exists, so every count is an observed verified count, not a complete census.
+
+Worked example for one table, default window, no gaps: 6 Banker, Tie, 7 Banker finishing at 08:00 gives `reached_13_strict_v1` = 0 and `reached_13_tie_transparent_v1` = 1 for BANKER. On the same table, 13 Player results with the 13th at 15:00 add 1 PLAYER event under both policies. With window `[00:00, 24:00)` the same data give the same counts; with `[09:00, 21:00)` the Banker event at 08:00 is excluded.
+
+Run it after importing or recording verified rounds:
+
+    docker compose run --rm report python -m agent.cli report-streaks \n      --date 2026-10-19 --source DEMO_FIXTURE --start 07:00 --end 21:00
+
+The command prints the headline and writes `output/reports/baccarat_streak13_YYYY-MM-DD_HHMM-HHMM_<source-hash>.xlsx` with Headline, Per table, Events, and Methodology sheets. `--start`/`--end` set the window (`--end 24:00` for the whole day). `--red-outcome BANKER|PLAYER` only adds color labels; omit it until the source mapping is verified, and the workbook shows `UNVERIFIED`. Shoe boundaries are not detected by this report; until the source records them, rely on recorded gaps. Acceptance cases A17–A20 in docs/14-acceptance.md cover the Tie policies, both sides, window assignment, and the long tie-transparent lookback.
+
+The older `report-red-window` command below remains for compatibility: one side per run, strict Tie policy only, fixed 07:00–21:00 window, and a 13-row lookback that is correct only for the strict policy.
+
+## Current implementation: red streaks from 07:00 to 21:00
+
+This section describes the implemented subset of the requested metric above: one side, strict Tie policy, fixed window. It is implemented by the separate `report-red-window` command for stored confirmed rounds, **not by the current daily workbook**. The existing `streak_13_banker` is a whole-day Banker metric; it cannot be presented as the requested red count without a verified source-specific color mapping and time-window calculation.
 
 - Configure one local time zone, initially `Asia/Ho_Chi_Minh`, and use the half-open interval `[07:00, 21:00)` for each calendar date. A result at 07:00 is in scope; a result at 21:00 is outside it. Store and compare UTC finish times, then convert for display.
 - Configure `RED` only after the authorized source survey confirms which published final outcome its red marker represents. Keep the source's final `BANKER`, `PLAYER`, or `TIE` label as the stored truth. Marker counts or color alone never create a round.
@@ -621,6 +661,18 @@ Running a report again currently overwrites the same workbook. Automatic email o
 
 Partition table ownership across workers only after measuring real CPU, RAM, browser contexts, render latency, and coverage. PostgreSQL is the default shared store; use connection limits or pooling after benchmarking, and keep table ownership explicit. A worker needs a heartbeat, backlog, last observation age, and last confirmed age. Stale frames create UNKNOWN/GAP, not inferred rounds.
 
+## Scheduled observation with a run block
+
+For daily operation, put a `run:` block (docs/17-source-integration.md) in the private source configuration, for example `start_at: "07:00"`, `stop_at: "21:00"`, `report_on_exit: true`, and start the worker with only `--config`. The worker waits for the start time, observes until the stop time, prints the report, and exits. Measured on the trial source, a login session lasted about two hours, so an unattended day still needs a human login whenever `MANUAL_LOGIN_REQUIRED` appears.
+
+## Report when monitoring stops
+
+`monitor-dom --report-on-exit` prints the reached-13 headline (docs/07-statistics-and-excel.md) and writes the `report-streaks` workbook when the worker ends: after its iteration count, on Ctrl+C, or on `docker stop` (SIGTERM). The report covers the current Asia/Ho_Chi_Minh date for the configured `source_id`, with the window from `--report-start`/`--report-end` (default 07:00–21:00), and uses the same `--database-url`. A report failure is printed but does not hide the reason the worker stopped. Give `docker stop` enough time (for example `docker stop -t 30`) for the report to finish.
+
+## Login sessions
+
+For a source that requires login, follow the session lifecycle in docs/17-source-integration.md: a human performs the first login and any CAPTCHA, the worker reuses `secrets/session_state.json`, re-logs in automatically only when no CAPTCHA appears, and otherwise records `CAPTCHA_REQUIRED` gaps and prints `MANUAL_LOGIN_REQUIRED`. Watch the worker log for that line; time until the human logs in again is reported as GAP. Measure how long a session lives before planning unattended hours.
+
 ## Security and resilience
 
 Use a session only where authorized. Keep the PostgreSQL password in untracked .env or a deployment secret store, not committed Compose files; do not publish credentials or cookies in logs. Do not bypass CAPTCHA or anti-bot controls. Save the smallest useful masked evidence, apply retention limits, make pg_dump or physical backups, and test restoration. Benchmark before setting worker resource limits.
@@ -649,7 +701,7 @@ Use a session only where authorized. Keep the PostgreSQL password in untracked .
 | T14 | Shoe change or roadmap reset | Rebaseline before confirmation |
 | T15 | Same source key with conflicting data | Quarantine; no silent correction |
 
-The 30 current tests and CLI demo cover only parts of T01–T08, PostgreSQL storage behavior, legacy migration, report export, red-window boundary and gap rules, mixed-source rejection, a synthetic structured candidate-to-storage flow, and a Chromium DOM-reader smoke test. Fourteen PostgreSQL integration tests run when RUN_PG_TESTS=1 and one browser smoke test runs when RUN_BROWSER_TESTS=1; Compose supplies both. T09–T15 still need a validated named-source adapter, real labeled evidence, and held-out integration tests. The full acceptance matrix is in docs/14-acceptance.md.
+The 72 current tests and CLI demo cover only parts of T01–T08, PostgreSQL storage behavior, legacy migration, report export, red-window boundary and gap rules, mixed-source rejection, a synthetic structured candidate-to-storage flow, and a Chromium DOM-reader smoke test. Seventeen PostgreSQL integration tests run when RUN_PG_TESTS=1 and one browser smoke test runs when RUN_BROWSER_TESTS=1; Compose supplies both. T11 (missing-table/capture gap), T12 (restart), and T15 (conflict quarantine) have synthetic structured-source tests; T02 is covered at the candidate-pipeline level by a 100-identical-frame test and a check that marker paths do not reference round writers. T09–T15 all still need a validated named-source adapter, real labeled evidence, and held-out integration tests before they count as accepted. The full acceptance matrix is in docs/14-acceptance.md.
 
 ## Commands
 
@@ -676,7 +728,7 @@ Start with 200–500 ended rounds across 3–6 tables and varied phases, outcome
 - Time appears seven hours off: distinguish UTC storage from Asia/Ho_Chi_Minh report time.
 - Import error for cv2/numpy/yaml: install requirements.txt; it is an environment problem, not a passed business test.
 
-In the rebuilt Docker image, all 30 tests passed against PostgreSQL 17 and Chromium. Without a running database or Chromium, fifteen integration tests skip and the other fifteen run. docker compose run --rm test enables both integration groups on a machine with Docker. The generated preview, structured export, and sample Excel are synthetic; real-source accuracy still needs separate evaluation.
+In the rebuilt Docker image, all 72 tests passed against PostgreSQL 17 and Chromium. Without a running database or Chromium, twenty-one integration tests skip and the other fifty-one run. docker compose run --rm test enables both integration groups on a machine with Docker. The generated preview, structured export, and sample Excel are synthetic; real-source accuracy still needs separate evaluation.
 
 ---
 
@@ -768,7 +820,7 @@ Current state: this repository is a prototype. Preview, marker monitoring, a con
 |---|---|
 | Inputs | Authorized UI or export; captures from a screen the operator may observe; independently reviewed CSV |
 | Users | Operator, data reviewer, report reader |
-| Current outputs | PostgreSQL observations, confirmed_rounds, observation_gaps; five-sheet Excel |
+| Current outputs | PostgreSQL observations, confirmed_rounds, observation_gaps, and the migration 003 source tables (evidence, conflicts, source gaps, processed frames, checkpoints); five-sheet daily Excel; three-sheet 07:00–21:00 red-window Excel |
 | Target outputs | Evidence-backed rounds, per-table quality/coverage, and conflict/unknown lists |
 | Time | Store UTC; current daily report boundary is Asia/Ho_Chi_Minh |
 
@@ -777,15 +829,15 @@ Current state: this repository is a prototype. Preview, marker monitoring, a con
 | ID | Requirement | Current state | Acceptance condition |
 |---|---|---|---|
 | F01 | Assign the correct table_id to each observation | Partial | Reordered cards never assign results to a different table; mismatch becomes UNKNOWN/GAP |
-| F02 | Keep frames separate from rounds | Implemented | 100 identical frames add zero confirmed rounds |
+| F02 | Keep frames separate from rounds | Implemented; tests replay 100 identical frames through the candidate pipeline and check that marker paths do not reference round writers | 100 identical frames add zero confirmed rounds |
 | F03 | Extract phase, ID, final result, and revision from a real source | Configurable DOM reader and structured export adapter; no named source validated | Evidence and tests exist for each source/layout |
 | F04 | Confirm each round once | Structured source coordinator and durable writer implemented; real source trust pending | Independent frames, trusted ID, consistent final result, no restart duplication |
-| F05 | Mark missing or unknowable data | Structured source gaps, restart, stale and missing-table paths implemented; real page behavior unvalidated | Outage, stale frame, ROI shift, and shoe change are recorded and break continuity |
+| F05 | Mark missing or unknowable data | Structured source gaps for restart, out-of-order timestamps, capture gaps, unknown phase, adapter errors, and missing tables implemented; page-content freshness (a frozen page) is not detected; real page behavior unvalidated | Outage, stale frame, ROI shift, and shoe change are recorded and break continuity |
 | F06 | Aggregate outcomes, streaks, and Wilson 95% | Implemented | Confirmed only; by table/day; Tie/GAP breaks strict streak |
 | F07 | Show provenance and quality | Partial | Synthetic/real source, confirmed count, gaps, unknown, and coverage are visible |
-| F08 | Recover and run on a schedule | Checkpoint and continuous DOM loop exist; health, managed session, soak, and report scheduling remain | Backoff, heartbeat, checkpoint, and idempotent daily report |
+| F08 | Recover and run on a schedule | Checkpoint, continuous DOM loop, and a login-session lifecycle (human CAPTCHA, automatic re-login otherwise) exist; health, measured session lifetime, soak, and report scheduling remain | Backoff, heartbeat, checkpoint, and idempotent daily report |
 | F09 | Handle conflict | Structured source conflicts quarantined; manual CSV conflicts raise | Never overwrite; queue both payloads and evidence for review |
-| F10 | Count verified red runs that first reach 13 in the configured 07:00–21:00 window | Partial: stored confirmed rounds and explicit mapping; no real-source validation or coverage ledger | Verified color mapping; one event per maximal run at its 13th result; per-table counts, total, evidence, and coverage; boundary and gap cases pass |
+| F10 | Count verified Banker runs and Player runs that first reach 13 in an operator-chosen local window (default 07:00–21:00), under both a strict and a tie-transparent Tie policy | Partial: `report-streaks` implements both sides, both Tie policies, the operator window, and the headline from stored confirmed rounds; no real-source validation, shoe-boundary detection, or coverage ledger | Definition in chapter 07; one event per maximal run at its 13th result; per table, side, and policy counts, totals, evidence, and coverage; color labels only after verified mapping; A13–A20 pass |
 
 ## Target data flow
 
@@ -817,7 +869,7 @@ The source adapter and confirmed_round write path are a trust boundary. No marke
 - Rates use confirmed rounds only. Show coverage so missing data is not mistaken for zero games.
 - Tie breaks the current strict streak. Different roadmap semantics need a separately named/versioned metric.
 - Synthetic data must use a separate database.
-- Never interpret a site's red color as Banker or Player without a validated mapping for that source/layout. Count 13-red events only from verified results, independently by table, using the window rules in chapter 07.
+- Never interpret a site's red color as Banker or Player without a validated mapping for that source/layout. Count 13-in-a-row events only from verified results, independently by table and side, using the window and Tie-policy rules in chapter 07.
 
 ## Decisions before a real adapter
 
@@ -827,7 +879,7 @@ Complete docs/15-source-survey.md for each source: access permission/rate, ID st
 
 | Milestone | Reviewable output | Exit gate |
 |---|---|---|
-| M0 — current prototype | Synthetic preview/CSV/structured export/Excel, red-window report, and 30 tests, fourteen requiring PostgreSQL and one Chromium | Runs on target machine; team understands data is synthetic and coverage is unknown |
+| M0 — current prototype | Synthetic preview/CSV/structured export/Excel, red-window and reached-13 streak reports, and 72 tests, seventeen requiring PostgreSQL, one Chromium, and three both | Runs on target machine; team understands data is synthetic and coverage is unknown |
 | M1 — one real table | Adapter, labeled corpus, evidence viewer | Held-out criteria in chapter 14 pass |
 | M2 — 3–6 tables | Worker, checkpoint, gap/conflict, coverage report | 24–72 hour soak and per-table comparison |
 | M3 — scale | CPU/RAM/latency benchmark and worker groups | Per-table quality does not decline; backup/restore and alerts pass |
@@ -875,6 +927,8 @@ capture_id is unique within the source. captured_at_utc is frame time, not autom
 | final_result | BANKER, PLAYER, TIE, or null; only the published final outcome |
 | roadmap_revision | Versioned roadmap fingerprint, not merely total marker count |
 | captured_at_utc and evidence_ref | Carried by the envelope because the original TableEvidence dataclass lacks them |
+
+**Planned contract change (not implemented).** TableEvidence and ExtractedEvidence currently carry no parser version and no quality reason, and no table stores them. Before a named-source adapter is written, add `parser_version` and `quality_reason` (for example `OK`, `LABEL_MISMATCH`, `FIELD_UNREADABLE`, `PAGE_STALE`) to ExtractedEvidence, persist them in a new numbered migration, and record them with each source gap and evidence row. Until then, adapters can express quality only by omitting a table (TABLE_MISSING) or returning phase UNKNOWN.
 
 An adapter should preserve unreadable fields as UNKNOWN with a reason, never manufacture a round ID from timestamp or marker position. If published result and roadmap disagree, route to review. Document Tie behavior for the exact road being parsed.
 
@@ -929,7 +983,7 @@ A report rerun currently overwrites the same workbook. Automated publishing need
 
 ## Two test layers
 
-**Prototype:** run python3 -m unittest discover -s tests -v with dependencies installed, or docker compose run --rm test. The 30 tests cover the conservative FSM, structured candidate-to-storage path, frame replay, source conflict quarantine, restart GAP, PostgreSQL deduplication, transactional rollback, one-time SQLite migration, report export, red-window boundaries and mixed-source rejection, strict streaks, gaps, local-day boundary, synthetic ROI, and a Chromium DOM-reader smoke test. Fourteen tests require PostgreSQL and one requires Chromium; Compose runs both. They do not establish accuracy on a real website.
+**Prototype:** run python3 -m unittest discover -s tests -v with dependencies installed, or docker compose run --rm test. The 72 tests cover the conservative FSM (including repeated phase frames), an end-to-end simulated site with login and CAPTCHA blocking, structured candidate-to-storage path, frame replay, source conflict quarantine, restart GAP, PostgreSQL deduplication, transactional rollback, one-time SQLite migration, report export, red-window boundaries and mixed-source rejection, strict streaks, gaps, local-day boundary, synthetic ROI, and a Chromium DOM-reader smoke test. Seventeen tests require PostgreSQL and one requires Chromium; Compose runs both. They do not establish accuracy on a real website.
 
 **Real adapter:** create an independently labeled corpus for every source/layout. Preserve permitted captures, timestamps, table labels, phase, round ID, final result, shoe/reset, gaps, and unreadable states. Hold out entire sessions/days/tables from calibration.
 
@@ -977,6 +1031,20 @@ A correct color on the wrong table counts as both a false positive and a false n
 | A14 | The 13th red result at 21:00 or a gap before the 13th | Zero in-window reached-13 events; gap breaks continuity |
 | A15 | Two tables each first reach 13 inside the window | One event per table and two in the aggregate; no cross-table streak |
 | A16 | Site red mapping unverified or coverage incomplete | No asserted red-streak total; show unknown mapping or incomplete coverage |
+| A17 | One table: 6 Banker, Tie, 7 Banker, all inside the window | `reached_13_strict_v1` = 0; `reached_13_tie_transparent_v1` = 1 |
+| A18 | One table reaches 13 Banker and, later, 13 Player inside the window | One BANKER and one PLAYER event under each policy; side totals are reported separately |
+| A19 | Same data with windows `[07:00, 21:00)`, `[00:00, 24:00)`, and `[09:00, 21:00)` | Events assigned by the 13th result's local time; end exclusive; a run started before `start` still counts once |
+| A20 | Window with `start >= end`, a midnight-crossing window, or a tie-transparent run whose start lies more than 13 rows before `start` | Invalid windows rejected; the long lookback still finds continuity correctly |
+
+### Current synthetic coverage of the matrix
+
+Synthetic tests are not acceptance evidence; they show only that the generic code behaves as specified on fixtures.
+
+| Status | Cases |
+|---|---|
+| Synthetic test exists | A01 (candidate pipeline), A02, A08, A10, A11, A13, A14, A15, A17, A18, A19, A20 |
+| Partial | A03 (no confirmation, but no quality or conflict event is recorded), A09 (sequential conflict, no concurrent writers), A16 (mapping is required and coverage is UNKNOWN; no "unverified mapping" output) |
+| No test yet | A04, A05, A06, A07, A12 |
 
 ## Suggested release gate
 
@@ -1016,8 +1084,9 @@ Copy this template into a separate private record for **each authorized website 
 | BETTING/DEALING/RESULT signals and their display duration | NOT DETERMINED |
 | Final Banker/Player/Tie source and update delay | NOT DETERMINED |
 | Roadmap type and Tie/pair/reset/scroll semantics | NOT DETERMINED |
-| Published final outcome represented by red in this exact source/layout; evidence for the mapping | NOT DETERMINED |
-| Reporting time zone, 07:00–21:00 coverage, and treatment of results at the boundaries | NOT DETERMINED |
+| Published final outcome represented by red and by blue in this exact source/layout; evidence for the mapping | NOT DETERMINED |
+| How the source roadmap draws Tie (separate marker, slash on previous marker, or other) and whether its runs continue across shoes | NOT DETERMINED |
+| Reporting time zone, required report windows (default 07:00–21:00), coverage, and treatment of results at the boundaries | NOT DETERMINED |
 
 ## C. Samples to collect
 
@@ -1067,8 +1136,6 @@ The table is an inventory of every third-party package explicitly declared by th
 | PyYAML | `yaml`, table configuration | `>=6.0,<7` | `requirements.txt` | Runtime, synthetic image tool, tests |
 | XlsxWriter | `xlsxwriter`, Excel reports | `>=3.2,<4` | `requirements.txt` | Runtime, report tests |
 | Psycopg 3 with binary package | `psycopg`, PostgreSQL access | `>=3.2,<3.4` | `requirements.txt` | Runtime, database tests, legacy import |
-| python-docx | `docx`, DOCX handbook generation | `==1.2.0` | `docs-requirements.txt` | Documentation build only |
-| ReportLab | `reportlab`, PDF handbook generation | `==4.4.4` | `docs-requirements.txt` | Documentation build only |
 
 The `psycopg[binary]` extra also installs a matching `psycopg-binary` distribution. Other packages may pull in further indirect distributions; their exact names and versions belong in the future resolved lock, not in a guessed list.
 
@@ -1081,12 +1148,12 @@ The four packages with `>=` constraints can resolve to different versions on dif
 Before a production-oriented release:
 
 1. Choose an immutable application-image digest and PostgreSQL-image digest. Record the Python 3.12 patch version present in the application image.
-2. Keep a short list of direct dependencies, resolve it under Python 3.12 on the target Linux architecture, and commit an exact lock containing every direct and indirect distribution and its hashes. Lock documentation-build packages separately from runtime packages.
+2. Keep a short list of direct dependencies, resolve it under Python 3.12 on the target Linux architecture, and commit an exact lock containing every direct and indirect distribution and its hashes.
 3. Install from the committed lock in CI and in the application Dockerfile. Keep the Playwright Python package version equal to the browser image version.
-4. Rebuild and run the unit, PostgreSQL integration, browser smoke, documentation-build, and security checks after every dependency update. Record the lock revision, image digests, and test result for each release.
+4. Rebuild and run the unit, PostgreSQL integration, browser smoke, handbook-build, and security checks after every dependency update. Record the lock revision, image digests, and test result for each release.
 5. Review PostgreSQL major upgrades separately, including backup and restore. Allow controlled patch updates only after validation.
 
-These steps are release requirements, not a claim that the current POC has already completed them. Do not change `requirements.txt`, `docs-requirements.txt`, or Docker images solely by copying suggested numbers from documentation; resolve and test the complete graph first.
+These steps are release requirements, not a claim that the current POC has already completed them. Do not change `requirements.txt` or Docker images solely by copying suggested numbers from documentation; resolve and test the complete graph first.
 
 ---
 
@@ -1122,9 +1189,103 @@ For a real authorized structured export, leave `--trusted-round-ids` off until t
       --config config/my_source_dom.yaml --iterations 30 --interval 5
 
 4. Compare every extracted field against an independently labeled capture corpus. Include Tie, shoe reset, login/error states, table reordering, missing selectors, and page delays. Store the corpus and review decision outside the repository if it contains private data.
-5. Only after the source passes the acceptance gate, run with `--trusted-round-ids`. Use `--iterations 0` for an open-ended worker. The worker records missing-table, adapter, stale-frame, restart, and capture-gap events and fails closed when it cannot establish continuity.
+5. Only after the source passes the acceptance gate, run with `--trusted-round-ids`. Use `--iterations 0` for an open-ended worker. The worker records missing-table, adapter, out-of-order timestamp, restart, and capture-gap events and fails closed when it cannot establish continuity. It does not detect a frozen page whose content stops changing while captures continue; that check belongs in a source-specific adapter.
 
 The DOM reader only handles fields exposed as accessible text in one page context. Canvas-only content, cross-origin iframes, login/session workflows, and source-specific result behavior need a separate reviewed adapter. There is no generic safe way to infer these from a screenshot or marker count.
+
+## Session lifecycle for a page that requires login
+
+Some authorized sources show tables only to a logged-in account and present a CAPTCHA at login. The agent never solves, bypasses, or outsources a CAPTCHA. The design is "human logs in, agent observes":
+
+1. **Credentials.** The account owner puts `SITE_USERNAME` and `SITE_PASSWORD` in `secrets/site.env`. `secrets/` is ignored by Git and is never mounted into jobs other than `monitor-dom`; do not put site credentials in `.env`, which every Compose job receives and `docker compose config` prints. Programs never print these values.
+2. **First login by a human.** The operator logs in once in a visible browser (for example a local noVNC session bound to `127.0.0.1`) and solves any CAPTCHA. The browser session is saved as a Playwright storage state at `secrets/session_state.json`. Treat that file like a password.
+3. **Reuse.** `monitor-dom` loads the storage state when the config's `session` block names it, and saves it again after a successful login.
+4. **Logged-out detection.** Before each capture the worker checks the configured logged-out signals (the login URL fragment or a visible login form). A logged-out page records `LOGGED_OUT` gaps for every configured table. No round is confirmed from a logged-out or login page.
+5. **Automatic re-login, without CAPTCHA only.** At most once per `relogin_backoff_seconds`, the worker fills the configured username and password fields and submits. If the configured CAPTCHA pattern appears, it stops interacting, records `CAPTCHA_REQUIRED` gaps, prints `MANUAL_LOGIN_REQUIRED`, and waits for a human to log in again. If the page stays on the login form, it records `LOGIN_FAILED` gaps. It never retries in a tight loop.
+6. **Accounting.** Time spent logged out is a GAP, so strict and tie-transparent runs never continue across it.
+
+Configuration (all fields optional; omit the block for a page without login):
+
+    session:
+      storage_state: secrets/session_state.json
+      login_url: https://provider.example/login
+      logged_out_url_fragment: /login
+      username_selector: "input[type=text]"
+      password_selector: "input[type=password]"
+      captcha_pattern: "请完成安全验证|captcha"
+      relogin_backoff_seconds: 600
+
+Only account owners may provide credentials, and only for a source they may observe automatically. The worker performs no deposit, withdrawal, or wagering action.
+
+## Lobby counter reader (`reader: lobby_counters`)
+
+`agent/adapters/lobby_counters.py` reads a multi-table lobby that renders each table as a text card, possibly inside a cross-origin iframe, and implements evidence level B2 in docs/05-round-verification.md. Configuration:
+
+    reader: lobby_counters
+    lobby:
+      frame_url_contains: /egret/hall      # iframe whose document holds the cards
+      card_selector: div.game.isHallGame
+      name_selector: .table-name
+      countdown_selector: .time
+      counter_selector: .bootReport__count # [total, Banker, Player, Tie, ...]
+      table_id_pattern: "([A-Z]\\d+)$"     # table ID taken from the visible name
+    tables:
+      - id: B06
+
+Per table and frame the reader maps the card to the structured contract:
+
+| Card state | Phase | round_id | final_result | revision |
+|---|---|---|---|---|
+| Countdown visible, counters unchanged | BETTING | total + 1 | null | counters |
+| No countdown, counters unchanged since the countdown | DEALING | total + 1 | null | counters |
+| total rose by exactly 1 with exactly one of Banker/Player/Tie +1 | RESULT | new total | that side | counters |
+| total rose by more than 1, fell, inconsistent delta, unreadable counters | UNKNOWN | — | — | — |
+
+`shoe_id` is a local namespace `<first-seen UTC>` that changes when the total falls or after UNKNOWN, so the existing coordinator, validator, two-frame RESULT rule, and gap handling apply unchanged. A card whose numeric DOM id changes for the same table name is treated as a different table and fails closed. Only cards currently rendered are readable: a virtualized or filtered lobby view (for example a "good road" view whose membership changes) yields a TABLE_MISSING gap for configured tables that are not shown. The coordinator records one TABLE_MISSING gap per continuous absence (not one per frame) and still resets that table's validator on every missing frame. Choose a stable lobby view and list only tables you can keep visible.
+
+The reader saves only a JSON manifest per frame (raw card text plus the mapped table states); it saves no screenshots. The text manifest is the evidence reference for each confirmed round. An 8-minute real trial produced about 1.2 MB of manifests, while screenshots had produced 58 MB and were removed. Trusted round IDs stay off until a held-out comparison against the roadmap passes.
+
+### Automatic table discovery (`tables: auto`)
+
+A lobby whose visible tables change (filtered or virtualized views) cannot be covered by a fixed table list. With `tables: auto`, available only for `reader: lobby_counters`, every card whose visible name matches `table_id_pattern` becomes an observed table the first time it appears. Rules:
+
+- A newly discovered table starts a fresh local shoe namespace and needs a full BETTING → DEALING → RESULT → RESULT cycle; rounds before discovery are never inferred.
+- A table that disappears gets one TABLE_MISSING gap per continuous absence. When it reappears it starts a new namespace, so missed rounds stay missed.
+- Two cards resolving to the same table ID in one frame are ambiguous; that table is treated as missing for the frame.
+- A worker restart still records WORKER_RESTART for every table it has a checkpoint for, when that table is first seen in the new run.
+
+A fixed list remains supported and is preferable when the operator must restrict the report to specific tables.
+
+## Run settings (`run:` block)
+
+Operators can keep every run choice in the source configuration instead of command-line flags:
+
+    run:
+      start_at: "07:00"            # optional local time; wait until then before observing
+      stop_at: "21:00"             # optional local time; stop observing at this time
+      duration_minutes: 60         # optional; stop after this long (the earlier stop wins)
+      interval_seconds: 1          # pause between captures
+      trusted_round_ids: false     # enable only after the source passed acceptance
+      report_on_exit: true         # print and export the reached-13 report when stopping
+      report_window: {start: "07:00", end: "21:00"}
+      report_dir: output/reports
+      login_reminder_seconds: 300  # repeat MANUAL_LOGIN_REQUIRED while blocked
+
+Times use Asia/Ho_Chi_Minh. If `start_at` has already passed today, observation starts at once, unless today's `stop_at` has also passed, in which case it waits for tomorrow's `start_at`. A `stop_at` not later than the start is taken on the following day. A command-line flag, when given, overrides the matching setting. For a quick test, `--start-now` ignores `start_at` and `--duration-minutes N` stops after N minutes (the earlier of that and `stop_at` wins); `--iterations` also remains available, and a run with a stop time and no `--iterations` runs until that time. The exit report covers the local date on which observation started. While a login is required, the worker repeats `MANUAL_LOGIN_REQUIRED reason=<state>` every `login_reminder_seconds`, including the logged-out backoff state.
+
+## Exporting a session from a real browser
+
+When the site rejects logins from an automated browser, the operator logs in with a real Chrome started with a separate profile and a local debug port:
+
+    & "C:\Program Files\Google\Chrome\Application\chrome.exe" --remote-debugging-port=9222 --user-data-dir="$env:LOCALAPPDATA\baccarat-agent-chrome" <login URL>
+
+After login, `tools/export_chrome_session.py` attaches read-only to that browser, and writes the site's cookies and localStorage (Playwright's own export omits localStorage for an attached browser) to `secrets/session_state.json` without printing values. Close that Chrome window when it is not needed: any local program can control it through the debug port.
+
+## Capture interval and missed rounds
+
+The validator needs at least one BETTING frame, one DEALING frame, and two distinct RESULT frames for every round. A full capture iteration (navigation check, DOM read, table crop, database transaction) must therefore take clearly less than the shortest displayed phase; measure it on the target machine and keep the `--interval` well below that phase length. When an iteration is slower and a phase is missed, the round is **not** confirmed: the error costs recall and coverage, never a wrong round. Repeated frames of one phase are expected and harmless.
+
+`tests/test_live_simulation.py` runs the whole path against a local simulated page: login without CAPTCHA, a 16-round sequence with 13 Banker results, the DOM reader, the coordinator, PostgreSQL in an isolated schema, and `report-streaks`. It also checks that a CAPTCHA blocks login and records one `CAPTCHA_REQUIRED` gap. It requires both `RUN_BROWSER_TESTS=1` and `RUN_PG_TESTS=1` and takes about two minutes. It proves the plumbing, not a real website's accuracy.
 
 ## Persistence and reporting
 

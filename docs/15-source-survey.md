@@ -24,8 +24,9 @@ Copy this template into a separate private record for **each authorized website 
 | BETTING/DEALING/RESULT signals and their display duration | NOT DETERMINED |
 | Final Banker/Player/Tie source and update delay | NOT DETERMINED |
 | Roadmap type and Tie/pair/reset/scroll semantics | NOT DETERMINED |
-| Published final outcome represented by red in this exact source/layout; evidence for the mapping | NOT DETERMINED |
-| Reporting time zone, 07:00–21:00 coverage, and treatment of results at the boundaries | NOT DETERMINED |
+| Published final outcome represented by red and by blue in this exact source/layout; evidence for the mapping | NOT DETERMINED |
+| How the source roadmap draws Tie (separate marker, slash on previous marker, or other) and whether its runs continue across shoes | NOT DETERMINED |
+| Reporting time zone, required report windows (default 07:00–21:00), coverage, and treatment of results at the boundaries | NOT DETERMINED |
 
 ## C. Samples to collect
 

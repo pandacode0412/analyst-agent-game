@@ -38,6 +38,8 @@ capture_id is unique within the source. captured_at_utc is frame time, not autom
 | roadmap_revision | Versioned roadmap fingerprint, not merely total marker count |
 | captured_at_utc and evidence_ref | Carried by the envelope because the original TableEvidence dataclass lacks them |
 
+**Planned contract change (not implemented).** TableEvidence and ExtractedEvidence currently carry no parser version and no quality reason, and no table stores them. Before a named-source adapter is written, add `parser_version` and `quality_reason` (for example `OK`, `LABEL_MISMATCH`, `FIELD_UNREADABLE`, `PAGE_STALE`) to ExtractedEvidence, persist them in a new numbered migration, and record them with each source gap and evidence row. Until then, adapters can express quality only by omitting a table (TABLE_MISSING) or returning phase UNKNOWN.
+
 An adapter should preserve unreadable fields as UNKNOWN with a reason, never manufacture a round ID from timestamp or marker position. If published result and roadmap disagree, route to review. Document Tie behavior for the exact road being parsed.
 
 ## Target confirmation flow

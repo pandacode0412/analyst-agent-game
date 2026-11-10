@@ -33,6 +33,18 @@ Running a report again currently overwrites the same workbook. Automatic email o
 
 Partition table ownership across workers only after measuring real CPU, RAM, browser contexts, render latency, and coverage. PostgreSQL is the default shared store; use connection limits or pooling after benchmarking, and keep table ownership explicit. A worker needs a heartbeat, backlog, last observation age, and last confirmed age. Stale frames create UNKNOWN/GAP, not inferred rounds.
 
+## Scheduled observation with a run block
+
+For daily operation, put a `run:` block (docs/17-source-integration.md) in the private source configuration, for example `start_at: "07:00"`, `stop_at: "21:00"`, `report_on_exit: true`, and start the worker with only `--config`. The worker waits for the start time, observes until the stop time, prints the report, and exits. Measured on the trial source, a login session lasted about two hours, so an unattended day still needs a human login whenever `MANUAL_LOGIN_REQUIRED` appears.
+
+## Report when monitoring stops
+
+`monitor-dom --report-on-exit` prints the reached-13 headline (docs/07-statistics-and-excel.md) and writes the `report-streaks` workbook when the worker ends: after its iteration count, on Ctrl+C, or on `docker stop` (SIGTERM). The report covers the current Asia/Ho_Chi_Minh date for the configured `source_id`, with the window from `--report-start`/`--report-end` (default 07:00–21:00), and uses the same `--database-url`. A report failure is printed but does not hide the reason the worker stopped. Give `docker stop` enough time (for example `docker stop -t 30`) for the report to finish.
+
+## Login sessions
+
+For a source that requires login, follow the session lifecycle in docs/17-source-integration.md: a human performs the first login and any CAPTCHA, the worker reuses `secrets/session_state.json`, re-logs in automatically only when no CAPTCHA appears, and otherwise records `CAPTCHA_REQUIRED` gaps and prints `MANUAL_LOGIN_REQUIRED`. Watch the worker log for that line; time until the human logs in again is reported as GAP. Measure how long a session lives before planning unattended hours.
+
 ## Security and resilience
 
 Use a session only where authorized. Keep the PostgreSQL password in untracked .env or a deployment secret store, not committed Compose files; do not publish credentials or cookies in logs. Do not bypass CAPTCHA or anti-bot controls. Save the smallest useful masked evidence, apply retention limits, make pg_dump or physical backups, and test restoration. Benchmark before setting worker resource limits.

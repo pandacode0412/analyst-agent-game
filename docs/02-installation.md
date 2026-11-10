@@ -56,7 +56,7 @@ The db health check must pass before jobs that need storage start. PostgreSQL da
   This command reads confirmed rounds only. It marks observation coverage UNKNOWN and cannot establish that no rounds were missed.
 
 - replay-export-demo processes four synthetic structured frames and stores one evidence-backed confirmed round on first run. Keep its data separate from real sources.
-- test runs 30 tests: fourteen PostgreSQL integration tests in isolated temporary schemas, one Chromium DOM-reader smoke test, and fifteen source-independent tests. The server must be healthy.
+- test runs 72 tests: seventeen PostgreSQL integration tests in isolated temporary schemas, one Chromium DOM-reader smoke test, three end-to-end simulated-site tests that need both, and fifty-one source-independent tests. The server must be healthy.
 
 Keep synthetic and real data in separate databases or Compose projects.
 
@@ -78,6 +78,6 @@ The tool takes a consistent read-only snapshot of the SQLite file and imports ob
 
 ## Host Python without Docker
 
-Use a Python 3.12 virtual environment, install Python dependencies from requirements.txt, and provide a PostgreSQL 17 server. Set PGHOST, PGPORT, PGDATABASE, PGUSER, and PGPASSWORD, or DATABASE_URL. For the fourteen database integration tests also set RUN_PG_TESTS=1. Set RUN_BROWSER_TESTS=1 only when Playwright Chromium and its system libraries are installed. Without either dependency, those fifteen tests skip and the other fifteen still run. Compose is the documented runtime path and enables both integration groups. The current version ranges mean a host install may differ from another install; see docs/16-dependencies-and-version-policy.md before treating it as a reproducible release.
+Use a Python 3.12 virtual environment, install Python dependencies from requirements.txt, and provide a PostgreSQL 17 server. Set PGHOST, PGPORT, PGDATABASE, PGUSER, and PGPASSWORD, or DATABASE_URL. For the fifteen database integration tests also set RUN_PG_TESTS=1. Set RUN_BROWSER_TESTS=1 only when Playwright Chromium and its system libraries are installed. Without either dependency, those twenty-one tests skip and the other fifty-one still run. Compose is the documented runtime path and enables both integration groups. The current version ranges mean a host install may differ from another install; see docs/16-dependencies-and-version-policy.md before treating it as a reproducible release.
 
 For the structured export and DOM source path, see docs/17-source-integration.md. `config/real_dom.example.yaml` contains placeholder selectors and `https://example.com`; it is not a ready Baccarat source.

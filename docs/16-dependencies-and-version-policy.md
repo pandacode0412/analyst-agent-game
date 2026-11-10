@@ -29,8 +29,6 @@ The table is an inventory of every third-party package explicitly declared by th
 | PyYAML | `yaml`, table configuration | `>=6.0,<7` | `requirements.txt` | Runtime, synthetic image tool, tests |
 | XlsxWriter | `xlsxwriter`, Excel reports | `>=3.2,<4` | `requirements.txt` | Runtime, report tests |
 | Psycopg 3 with binary package | `psycopg`, PostgreSQL access | `>=3.2,<3.4` | `requirements.txt` | Runtime, database tests, legacy import |
-| python-docx | `docx`, DOCX handbook generation | `==1.2.0` | `docs-requirements.txt` | Documentation build only |
-| ReportLab | `reportlab`, PDF handbook generation | `==4.4.4` | `docs-requirements.txt` | Documentation build only |
 
 The `psycopg[binary]` extra also installs a matching `psycopg-binary` distribution. Other packages may pull in further indirect distributions; their exact names and versions belong in the future resolved lock, not in a guessed list.
 
@@ -43,9 +41,9 @@ The four packages with `>=` constraints can resolve to different versions on dif
 Before a production-oriented release:
 
 1. Choose an immutable application-image digest and PostgreSQL-image digest. Record the Python 3.12 patch version present in the application image.
-2. Keep a short list of direct dependencies, resolve it under Python 3.12 on the target Linux architecture, and commit an exact lock containing every direct and indirect distribution and its hashes. Lock documentation-build packages separately from runtime packages.
+2. Keep a short list of direct dependencies, resolve it under Python 3.12 on the target Linux architecture, and commit an exact lock containing every direct and indirect distribution and its hashes.
 3. Install from the committed lock in CI and in the application Dockerfile. Keep the Playwright Python package version equal to the browser image version.
-4. Rebuild and run the unit, PostgreSQL integration, browser smoke, documentation-build, and security checks after every dependency update. Record the lock revision, image digests, and test result for each release.
+4. Rebuild and run the unit, PostgreSQL integration, browser smoke, handbook-build, and security checks after every dependency update. Record the lock revision, image digests, and test result for each release.
 5. Review PostgreSQL major upgrades separately, including backup and restore. Allow controlled patch updates only after validation.
 
-These steps are release requirements, not a claim that the current POC has already completed them. Do not change `requirements.txt`, `docs-requirements.txt`, or Docker images solely by copying suggested numbers from documentation; resolve and test the complete graph first.
+These steps are release requirements, not a claim that the current POC has already completed them. Do not change `requirements.txt` or Docker images solely by copying suggested numbers from documentation; resolve and test the complete graph first.

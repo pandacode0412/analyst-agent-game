@@ -9,9 +9,10 @@ from .storage import parse_utc
 
 class SourceCoordinator:
     def __init__(self, conn, source_id: str, expected_tables: set[str],
-                 max_frame_gap_seconds: float = 30):
-        if not source_id or not expected_tables or max_frame_gap_seconds <= 0:
-            raise ValueError("source, expected tables, and positive gap limit are required")
+                 max_frame_gap_seconds: float = 30, auto_tables: bool = False):
+        if not source_id or not (expected_tables or auto_tables) or max_frame_gap_seconds <= 0:
+            raise ValueError("source, expected tables (or auto_tables), and positive gap limit are required")
+        self.auto_tables = auto_tables
         self.conn = conn
         self.source_id = source_id
         self.expected_tables = set(expected_tables)
@@ -19,6 +20,7 @@ class SourceCoordinator:
         self.pipeline = CandidatePipeline(source_id)
         self.run_id = uuid4().hex
         self.seen_in_run: set[str] = set()
+        self.missing_tables: set[str] = set()
 
     def gap(self, table_id: str, frame_id: str, at_utc: str, reason: str) -> bool:
         if table_id not in self.expected_tables:
@@ -87,6 +89,10 @@ class SourceCoordinator:
                 self.gap(table_id, frame.frame_id, frame.captured_at_utc, "ADAPTER_ERROR")
             raise
         by_table = {}
+        if self.auto_tables:
+            # Tables discovered in this frame join the observed set before validation.
+            self.expected_tables.update(record.evidence.table_id for record in records
+                                        if record.evidence.table_id)
         for record in records:
             table_id = record.evidence.table_id
             if (table_id in by_table or table_id not in self.expected_tables
@@ -100,8 +106,14 @@ class SourceCoordinator:
         result = {}
         for table_id in self.expected_tables:
             if table_id not in by_table:
-                self.gap(table_id, frame.frame_id, frame.captured_at_utc, "TABLE_MISSING")
+                if table_id in self.missing_tables:
+                    # One gap per continuous absence; keep the validator reset.
+                    self.pipeline.gap(table_id)
+                else:
+                    self.gap(table_id, frame.frame_id, frame.captured_at_utc, "TABLE_MISSING")
+                    self.missing_tables.add(table_id)
                 result[table_id] = "GAP"
             else:
+                self.missing_tables.discard(table_id)
                 result[table_id] = self.process(by_table[table_id])
         return result

@@ -20,14 +20,17 @@ README.md, AGENTS.md, docs/*.md, and samples/*.md are the maintained sources. Af
 
 ## Accurate current state
 
-- agent/browser.py captures frames and writes observations only. It does not invoke the validator.
+- agent/browser.py: monitor-browser captures frames and writes marker observations only. monitor-dom (monitor_dom_browser) reads configured DOM text and drives SourceCoordinator, the FSM, and the durable writer; it can write confirmed rounds only with --trusted-round-ids. Neither path measures page-content freshness.
 - agent/vision.py counts red and blue markers; a marker is not a completed round.
 - agent/round_validator.py is an in-memory teaching FSM for already extracted TableEvidence. It does not parse a real UI or recover its state after restart.
-- agent/site_adapter.py defines a source adapter protocol. adapters/structured.py reads explicit states; adapters/dom.py reads configured text selectors. The shipped DOM selectors are placeholders, not a validated named-source adapter.
+- agent/site_adapter.py defines a source adapter protocol. adapters/structured.py implements it for explicit states; adapters/dom.py is a reader that builds a structured payload from configured text selectors, which StructuredExportAdapter then parses. The shipped DOM selectors are placeholders, not a validated named-source adapter.
 - agent/pipeline.py produces ConfirmedCandidate objects. agent/coordinator.py and agent/live_store.py now persist candidates, evidence, source gaps, conflicts, frame keys, and checkpoints; they do not prove that an adapter is trustworthy.
-- agent/storage.py uses PostgreSQL with transactional writes and an initial versioned schema migration. Its current unique key is (table_id, round_id); gaps are not deduplicated.
-- agent/analytics.py and agent/report.py report confirmed rounds with strict streaks that break on Tie or GAP and reset at the local day boundary.
-- agent/red_window.py and agent/red_report.py produce a separate 07:00–21:00 count of stored verified red-result runs reaching 13. They require an explicit BANKER/PLAYER mapping and report UNKNOWN coverage; they do not validate a live source.
+- agent/storage.py uses PostgreSQL with transactional writes and versioned migrations 001–003. Its current unique key is (table_id, round_id). Manual gaps (ingest-gaps) are not deduplicated; source gaps from the coordinator are.
+- agent/analytics.py and agent/report.py report confirmed rounds with strict streaks that break on Tie or GAP and reset at the local day boundary. They show recorded gaps but no UNKNOWN or coverage figures, and they combine sources that share a table_id.
+- agent/red_window.py and agent/red_report.py produce a separate 07:00–21:00 count of stored verified red-result runs reaching 13. They require an explicit BANKER/PLAYER mapping and report UNKNOWN coverage; they do not validate a live source. agent/streak_window.py and agent/streak_report.py (`report-streaks`) implement the full requested metric defined in docs/07-statistics-and-excel.md: both sides, two Tie policies, an operator-chosen window, and an all-table headline. Neither report validates a live source or detects shoe boundaries.
+- agent/session.py manages an optional login session for monitor-dom: it loads a saved storage state, detects logged-out pages, re-logs in only when no CAPTCHA appears, and records LOGGED_OUT, CAPTCHA_REQUIRED, or LOGIN_FAILED gaps. A human performs the first login and every CAPTCHA (docs/17-source-integration.md). Never automate CAPTCHA solving.
+- agent/adapters/lobby_counters.py reads a multi-table lobby from published per-shoe counters (docs/17-source-integration.md). It has passed only synthetic tests; a held-out comparison on the real source is still required before trusted IDs. tools/export_chrome_session.py exports a human-logged-in Chrome session.
+- agent/run_settings.py resolves an optional `run:` block (start/stop times, interval, report on exit, login reminders) with command-line overrides; lobby_counters supports `tables: auto` discovery.
 - monitor-dom can loop continuously for a configured accessible page. There is no validated named-site adapter, measured coverage, managed session lifecycle, or automatic report delivery.
 
 ## Implementation order
@@ -58,7 +61,7 @@ Each step should leave reviewable code, tests or labeled corpus evidence, update
     python3 tools/build_full_guide.py
     docker compose config
 
-The fourteen PostgreSQL integration tests run when RUN_PG_TESTS=1 and PG* connection variables point to a test server. docker compose run --rm test sets that flag and creates isolated temporary schemas.
+The seventeen PostgreSQL integration tests run when RUN_PG_TESTS=1 and PG* connection variables point to a test server. docker compose run --rm test sets that flag and creates isolated temporary schemas.
 
 Host Python needs dependencies from requirements.txt; Docker is an alternative if its daemon is available. Do not edit tests to hide a missing dependency.
 

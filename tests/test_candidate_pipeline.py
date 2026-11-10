@@ -44,6 +44,32 @@ class CandidatePipelineTests(unittest.TestCase):
         self.assertEqual(candidate.observed_result_at_utc, "2026-10-19T12:00:00+00:00")
         self.assertIsNone(pipeline.accept(record("f5", "RESULT", "BANKER", "revB")))
 
+    def test_a01_hundred_identical_frames_confirm_nothing(self):
+        pipeline = CandidatePipeline("approved-source")
+        for _ in range(100):
+            self.assertIsNone(pipeline.accept(record("same", "RESULT", "BANKER", "revB")))
+        pipeline.accept(record("f1", "BETTING"))
+        pipeline.accept(record("f2", "DEALING"))
+        self.assertIsNone(pipeline.accept(record("f3", "RESULT", "BANKER", "revB")))
+        results = [pipeline.accept(record("f3", "RESULT", "BANKER", "revB")) for _ in range(100)]
+        self.assertEqual(results, [None] * 100)
+
+    def test_marker_paths_never_reference_round_writers(self):
+        import ast
+        root = Path(__file__).resolve().parents[1]
+        writers = {"insert_verified_round", "save_candidate", "SourceCoordinator", "CandidatePipeline"}
+        for path in (root / "agent/vision.py", root / "agent/config.py"):
+            names = {node.id for node in ast.walk(ast.parse(path.read_text(encoding="utf-8")))
+                     if isinstance(node, ast.Name)}
+            self.assertFalse(names & writers, path.name)
+        tree = ast.parse((root / "agent/browser.py").read_text(encoding="utf-8"))
+        monitor = next(node for node in tree.body
+                       if isinstance(node, ast.AsyncFunctionDef) and node.name == "monitor_browser")
+        called = {node.func.id for node in ast.walk(monitor)
+                  if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)}
+        self.assertIn("record_observations", called)
+        self.assertFalse(called & writers)
+
     def test_gap_and_changed_result_fail_closed(self):
         pipeline = CandidatePipeline("approved-source")
         pipeline.accept(record("f1", "BETTING"))

@@ -7,6 +7,16 @@ viewport: {width: 1536, height: 864}
 ids_reset_per_shoe: true
 phase_map: {BETTING: BETTING, DEALING: DEALING, RESULT: RESULT}
 result_map: {BANKER: BANKER, PLAYER: PLAYER, TIE: TIE}
+# Optional login session (docs/17-source-integration.md). Omit for pages without login.
+# A human performs the first login and every CAPTCHA; the worker never solves one.
+# session:
+#   storage_state: secrets/session_state.json
+#   login_url: https://provider.example/login
+#   logged_out_url_fragment: /login
+#   username_selector: "input[type=text]"
+#   password_selector: "input[type=password]"
+#   captcha_pattern: "请完成安全验证|captcha"
+#   relogin_backoff_seconds: 600
 tables:
   - id: B51
     selectors:

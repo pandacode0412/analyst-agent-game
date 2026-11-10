@@ -8,3 +8,5 @@ output/*
 !output/.gitkeep
 *.backup
 *.dump
+secrets/
+config/private/

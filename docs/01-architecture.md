@@ -35,6 +35,10 @@ A single lobby screenshot covers only visible tables. Pagination, scrolling, laz
 | observations | Red/blue marker counts seen in an ROI at a time | No |
 | confirmed_rounds | One final result with a unique identity and verified source | Yes |
 | observation_gaps | A known interruption that may break streak continuity | Used to break strict streaks |
+| source_round_evidence | Two frame IDs and evidence references for each source-pipeline round | No; audit trail |
+| source_conflicts | Quarantined payloads that disagree with a stored round | No; awaits review |
+| source_gaps | Idempotent per-source gap events (also copied once into observation_gaps) | Indirectly, through observation_gaps |
+| processed_source_frames, worker_checkpoints | Replay prevention and restart detection per source/table | No |
 
 ## Prototype and target system
 

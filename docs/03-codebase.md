@@ -2,7 +2,7 @@
 
 ## agent/cli.py
 
-argparse provides preview, monitor-image, capture-browser, monitor-browser, monitor-dom, replay-export, ingest-csv, ingest-gaps, report, and report-red-window. Docker Compose reuses the same image with different commands. The CLI never logs in or places bets.
+argparse provides preview, monitor-image, capture-browser, monitor-browser, monitor-dom, replay-export, ingest-csv, ingest-gaps, report, report-red-window, and report-streaks. Docker Compose reuses the same image with different commands. The CLI never logs in or places bets.
 
 | Command | Input | Output | Writes confirmed rounds? |
 |---|---|---|---|
@@ -16,6 +16,7 @@ argparse provides preview, monitor-image, capture-browser, monitor-browser, moni
 | ingest-gaps | Gap CSV | PostgreSQL observation_gaps | No |
 | report | Date and PostgreSQL database | Five-sheet Excel workbook | No |
 | report-red-window | Date, source, explicit RED mapping, and PostgreSQL database | Three-sheet 07:00–21:00 reached-13 Excel workbook | No |
+| report-streaks | Date, source, optional window and color label, PostgreSQL database | Printed headline and four-sheet Banker/Player reached-13 workbook for both Tie policies | No |
 
 Use python -m agent.cli <command> --help for CLI options.
 
@@ -27,7 +28,7 @@ vision.py loads images as BGR, converts crops to HSV, thresholds red/blue, filte
 
 ## agent/browser.py
 
-capture_page opens an internal Playwright Chromium page, waits for DOM content and a fixed delay, then saves one screenshot. monitor_browser opens one page and captures N frames; each is decoded, analyzed by ROI, and written as marker observations. monitor_dom_browser uses a configurable DOM reader, cropped table evidence, and the source coordinator. It can loop when iterations is zero, records errors as gaps, and retries navigation. It has no persistent login/session workflow or validated named Baccarat layout.
+capture_page opens an internal Playwright Chromium page, waits for DOM content and a fixed delay, then saves one screenshot. monitor_browser opens one page and captures N frames; each is decoded, analyzed by ROI, and written as marker observations. monitor_dom_browser uses a configurable DOM reader, cropped table evidence, and the source coordinator. It can loop when iterations is zero, records errors as gaps, and retries navigation. When the DOM config has a `session` block, agent/session.py loads `secrets/session_state.json`, detects logged-out pages, re-logs in only when no CAPTCHA appears, and records LOGGED_OUT, CAPTCHA_REQUIRED, or LOGIN_FAILED gaps (docs/17-source-integration.md). It has no validated named Baccarat layout.
 
 ## agent/round_validator.py
 
@@ -49,7 +50,7 @@ report.py writes Summary, Rounds, Streaks, Quality, and Methodology sheets throu
 
 ## Tools, tests, and deployment files
 
-agent/red_window.py counts one event when a verified strict red run first reaches 13 in the local 07:00–21:00 window, using up to 13 earlier events to handle a run crossing 07:00. agent/red_report.py exports the separate Excel workbook, including source evidence references when available. The caller must supply a source and BANKER or PLAYER as its validated red mapping; the workbook marks coverage UNKNOWN. A table ID shared by multiple sources is rejected until the schema gains a source namespace. tools/generate_synthetic_lobby.py creates a harmless six-table learning image. tools/build_full_guide.py combines maintained Markdown files. tools/migrate_sqlite_to_postgres.py imports a legacy SQLite snapshot into an empty PostgreSQL database. The test suite has 30 tests: fourteen PostgreSQL integration tests, one Chromium reader smoke test, and fifteen source-independent tests. Dockerfile packages Python, Psycopg, migrations, and Playwright Chromium. compose.yaml adds a PostgreSQL service with a named volume and health check; data/ is mounted read-only only for legacy import.
+agent/red_window.py counts one event when a verified strict red run first reaches 13 in the local 07:00–21:00 window, using up to 13 earlier events to handle a run crossing 07:00. agent/red_report.py exports the separate Excel workbook, including source evidence references when available. The caller must supply a source and BANKER or PLAYER as its validated red mapping; the workbook marks coverage UNKNOWN. A table ID shared by multiple sources is rejected until the schema gains a source namespace. tools/generate_synthetic_lobby.py creates a harmless six-table learning image. tools/build_full_guide.py combines maintained Markdown files. tools/migrate_sqlite_to_postgres.py imports a legacy SQLite snapshot into an empty PostgreSQL database. The test suite has 72 tests: seventeen PostgreSQL integration tests, one Chromium reader smoke test, three end-to-end simulated-site tests (tests/test_live_simulation.py), and fifty-one source-independent tests. Dockerfile packages Python, Psycopg, migrations, and Playwright Chromium. compose.yaml adds a PostgreSQL service with a named volume and health check; data/ is mounted read-only only for legacy import.
 
 ## Example call paths
 

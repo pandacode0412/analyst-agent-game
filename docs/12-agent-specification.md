@@ -12,7 +12,7 @@ Current state: this repository is a prototype. Preview, marker monitoring, a con
 |---|---|
 | Inputs | Authorized UI or export; captures from a screen the operator may observe; independently reviewed CSV |
 | Users | Operator, data reviewer, report reader |
-| Current outputs | PostgreSQL observations, confirmed_rounds, observation_gaps; five-sheet Excel |
+| Current outputs | PostgreSQL observations, confirmed_rounds, observation_gaps, and the migration 003 source tables (evidence, conflicts, source gaps, processed frames, checkpoints); five-sheet daily Excel; three-sheet 07:00–21:00 red-window Excel |
 | Target outputs | Evidence-backed rounds, per-table quality/coverage, and conflict/unknown lists |
 | Time | Store UTC; current daily report boundary is Asia/Ho_Chi_Minh |
 
@@ -21,15 +21,15 @@ Current state: this repository is a prototype. Preview, marker monitoring, a con
 | ID | Requirement | Current state | Acceptance condition |
 |---|---|---|---|
 | F01 | Assign the correct table_id to each observation | Partial | Reordered cards never assign results to a different table; mismatch becomes UNKNOWN/GAP |
-| F02 | Keep frames separate from rounds | Implemented | 100 identical frames add zero confirmed rounds |
+| F02 | Keep frames separate from rounds | Implemented; tests replay 100 identical frames through the candidate pipeline and check that marker paths do not reference round writers | 100 identical frames add zero confirmed rounds |
 | F03 | Extract phase, ID, final result, and revision from a real source | Configurable DOM reader and structured export adapter; no named source validated | Evidence and tests exist for each source/layout |
 | F04 | Confirm each round once | Structured source coordinator and durable writer implemented; real source trust pending | Independent frames, trusted ID, consistent final result, no restart duplication |
-| F05 | Mark missing or unknowable data | Structured source gaps, restart, stale and missing-table paths implemented; real page behavior unvalidated | Outage, stale frame, ROI shift, and shoe change are recorded and break continuity |
+| F05 | Mark missing or unknowable data | Structured source gaps for restart, out-of-order timestamps, capture gaps, unknown phase, adapter errors, and missing tables implemented; page-content freshness (a frozen page) is not detected; real page behavior unvalidated | Outage, stale frame, ROI shift, and shoe change are recorded and break continuity |
 | F06 | Aggregate outcomes, streaks, and Wilson 95% | Implemented | Confirmed only; by table/day; Tie/GAP breaks strict streak |
 | F07 | Show provenance and quality | Partial | Synthetic/real source, confirmed count, gaps, unknown, and coverage are visible |
-| F08 | Recover and run on a schedule | Checkpoint and continuous DOM loop exist; health, managed session, soak, and report scheduling remain | Backoff, heartbeat, checkpoint, and idempotent daily report |
+| F08 | Recover and run on a schedule | Checkpoint, continuous DOM loop, and a login-session lifecycle (human CAPTCHA, automatic re-login otherwise) exist; health, measured session lifetime, soak, and report scheduling remain | Backoff, heartbeat, checkpoint, and idempotent daily report |
 | F09 | Handle conflict | Structured source conflicts quarantined; manual CSV conflicts raise | Never overwrite; queue both payloads and evidence for review |
-| F10 | Count verified red runs that first reach 13 in the configured 07:00–21:00 window | Partial: stored confirmed rounds and explicit mapping; no real-source validation or coverage ledger | Verified color mapping; one event per maximal run at its 13th result; per-table counts, total, evidence, and coverage; boundary and gap cases pass |
+| F10 | Count verified Banker runs and Player runs that first reach 13 in an operator-chosen local window (default 07:00–21:00), under both a strict and a tie-transparent Tie policy | Partial: `report-streaks` implements both sides, both Tie policies, the operator window, and the headline from stored confirmed rounds; no real-source validation, shoe-boundary detection, or coverage ledger | Definition in chapter 07; one event per maximal run at its 13th result; per table, side, and policy counts, totals, evidence, and coverage; color labels only after verified mapping; A13–A20 pass |
 
 ## Target data flow
 
@@ -61,7 +61,7 @@ The source adapter and confirmed_round write path are a trust boundary. No marke
 - Rates use confirmed rounds only. Show coverage so missing data is not mistaken for zero games.
 - Tie breaks the current strict streak. Different roadmap semantics need a separately named/versioned metric.
 - Synthetic data must use a separate database.
-- Never interpret a site's red color as Banker or Player without a validated mapping for that source/layout. Count 13-red events only from verified results, independently by table, using the window rules in chapter 07.
+- Never interpret a site's red color as Banker or Player without a validated mapping for that source/layout. Count 13-in-a-row events only from verified results, independently by table and side, using the window and Tie-policy rules in chapter 07.
 
 ## Decisions before a real adapter
 
@@ -71,7 +71,7 @@ Complete docs/15-source-survey.md for each source: access permission/rate, ID st
 
 | Milestone | Reviewable output | Exit gate |
 |---|---|---|
-| M0 — current prototype | Synthetic preview/CSV/structured export/Excel, red-window report, and 30 tests, fourteen requiring PostgreSQL and one Chromium | Runs on target machine; team understands data is synthetic and coverage is unknown |
+| M0 — current prototype | Synthetic preview/CSV/structured export/Excel, red-window and reached-13 streak reports, and 72 tests, seventeen requiring PostgreSQL, one Chromium, and three both | Runs on target machine; team understands data is synthetic and coverage is unknown |
 | M1 — one real table | Adapter, labeled corpus, evidence viewer | Held-out criteria in chapter 14 pass |
 | M2 — 3–6 tables | Worker, checkpoint, gap/conflict, coverage report | 24–72 hour soak and per-table comparison |
 | M3 — scale | CPU/RAM/latency benchmark and worker groups | Per-table quality does not decline; backup/restore and alerts pass |

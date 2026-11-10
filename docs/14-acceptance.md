@@ -2,7 +2,7 @@
 
 ## Two test layers
 
-**Prototype:** run python3 -m unittest discover -s tests -v with dependencies installed, or docker compose run --rm test. The 30 tests cover the conservative FSM, structured candidate-to-storage path, frame replay, source conflict quarantine, restart GAP, PostgreSQL deduplication, transactional rollback, one-time SQLite migration, report export, red-window boundaries and mixed-source rejection, strict streaks, gaps, local-day boundary, synthetic ROI, and a Chromium DOM-reader smoke test. Fourteen tests require PostgreSQL and one requires Chromium; Compose runs both. They do not establish accuracy on a real website.
+**Prototype:** run python3 -m unittest discover -s tests -v with dependencies installed, or docker compose run --rm test. The 72 tests cover the conservative FSM (including repeated phase frames), an end-to-end simulated site with login and CAPTCHA blocking, structured candidate-to-storage path, frame replay, source conflict quarantine, restart GAP, PostgreSQL deduplication, transactional rollback, one-time SQLite migration, report export, red-window boundaries and mixed-source rejection, strict streaks, gaps, local-day boundary, synthetic ROI, and a Chromium DOM-reader smoke test. Seventeen tests require PostgreSQL and one requires Chromium; Compose runs both. They do not establish accuracy on a real website.
 
 **Real adapter:** create an independently labeled corpus for every source/layout. Preserve permitted captures, timestamps, table labels, phase, round ID, final result, shoe/reset, gaps, and unreadable states. Hold out entire sessions/days/tables from calibration.
 
@@ -50,6 +50,20 @@ A correct color on the wrong table counts as both a false positive and a false n
 | A14 | The 13th red result at 21:00 or a gap before the 13th | Zero in-window reached-13 events; gap breaks continuity |
 | A15 | Two tables each first reach 13 inside the window | One event per table and two in the aggregate; no cross-table streak |
 | A16 | Site red mapping unverified or coverage incomplete | No asserted red-streak total; show unknown mapping or incomplete coverage |
+| A17 | One table: 6 Banker, Tie, 7 Banker, all inside the window | `reached_13_strict_v1` = 0; `reached_13_tie_transparent_v1` = 1 |
+| A18 | One table reaches 13 Banker and, later, 13 Player inside the window | One BANKER and one PLAYER event under each policy; side totals are reported separately |
+| A19 | Same data with windows `[07:00, 21:00)`, `[00:00, 24:00)`, and `[09:00, 21:00)` | Events assigned by the 13th result's local time; end exclusive; a run started before `start` still counts once |
+| A20 | Window with `start >= end`, a midnight-crossing window, or a tie-transparent run whose start lies more than 13 rows before `start` | Invalid windows rejected; the long lookback still finds continuity correctly |
+
+### Current synthetic coverage of the matrix
+
+Synthetic tests are not acceptance evidence; they show only that the generic code behaves as specified on fixtures.
+
+| Status | Cases |
+|---|---|
+| Synthetic test exists | A01 (candidate pipeline), A02, A08, A10, A11, A13, A14, A15, A17, A18, A19, A20 |
+| Partial | A03 (no confirmation, but no quality or conflict event is recorded), A09 (sequential conflict, no concurrent writers), A16 (mapping is required and coverage is UNKNOWN; no "unverified mapping" output) |
+| No test yet | A04, A05, A06, A07, A12 |
 
 ## Suggested release gate
 

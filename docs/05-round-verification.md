@@ -26,6 +26,8 @@ This is a workflow example, not a claim about a particular site's display timing
 
 **B, requiring separate validation:** a complete phase sequence and a tested roadmap mapping with no observation gap, using a persistent shoe/session-local sequence ID.
 
+**B2, published shoe counters (requires separate validation):** some lobbies publish, as text, per-shoe counters `[total, Banker, Player, Tie]` but no round ID. A round is identified as `(source, table, local shoe namespace, total)`. A new round is accepted only when `total` rises by exactly 1 **and** exactly one of Banker/Player/Tie rises by exactly 1, seen on two independent frames after a BETTING (countdown) and DEALING frame of the same shoe position. A jump of more than one, a decrease (new shoe), an inconsistent delta, a missing card, or a changed card identity is UNKNOWN/GAP. The local shoe namespace is created when a shoe is first observed or after any break, so it never merges two observation periods; rounds missed while not observing are never inferred. See docs/17-source-integration.md.
+
 **C, unconfirmed:** marker count, pixel differences, screenshot timestamps, resize, or hash changes alone. Keep these as observations.
 
 ## Invariants

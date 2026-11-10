@@ -62,7 +62,9 @@ class ConservativeRoundValidator:
             self.state = "BETTING" if self.active_round and self.base_revision else "UNKNOWN"
             return None
         if evidence.phase == "DEALING":
-            if (self.state == "BETTING" and evidence.round_id_trusted
+            # Repeated DEALING frames of the same round are normal when the
+            # capture interval is shorter than the dealing phase.
+            if (self.state in ("BETTING", "DEALING") and evidence.round_id_trusted
                     and evidence.source_round_id == self.active_round):
                 self.state = "DEALING"
             else:

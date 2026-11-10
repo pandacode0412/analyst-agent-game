@@ -17,6 +17,8 @@ from agent.vision import analyze_frame, load_image
 from agent.report import export_daily
 from agent.red_report import export_red_window
 from agent.red_window import red_window_data
+from agent.streak_report import export_streak_window
+from agent.streak_window import streak_window_data
 from agent.adapters.structured import StructuredExportAdapter
 from agent.coordinator import SourceCoordinator
 from agent.live_store import save_candidate
@@ -141,6 +143,64 @@ class PostgreSQLPipelineTests(unittest.TestCase):
             self.assertIn("threshold", strings)
             self.assertIn("Coverage is UNKNOWN", strings)
 
+    def test_streak_window_long_lookback_both_policies_and_export(self):
+        # 12 Bankers, then 120 Ties before 07:00 local (00:00 UTC); 13th Banker inside the window.
+        for index in range(12):
+            self.add("B51", f"b-{index}", "BANKER", f"2026-10-18T20:{index:02d}:00Z")
+        for index in range(120):
+            self.add("B51", f"t-{index}", "TIE", f"2026-10-18T21:{index // 60:02d}:{index % 60:02d}Z")
+        self.add("B51", "thirteenth", "BANKER", "2026-10-19T00:05:00Z")
+        for index in range(13):
+            self.add("B20", f"p-{index}", "PLAYER", f"2026-10-19T03:{index:02d}:00Z")
+        data = streak_window_data(self.conn, date(2026, 10, 19), "UNIT_TEST")
+        self.assertEqual(data["totals"]["reached_13_strict_v1"], {"BANKER": 0, "PLAYER": 1})
+        self.assertEqual(data["totals"]["reached_13_tie_transparent_v1"], {"BANKER": 1, "PLAYER": 1})
+        self.assertEqual(data["tables_observed"], 2)
+        self.assertEqual(data["color_mapping"], {"BANKER": "UNVERIFIED", "PLAYER": "UNVERIFIED"})
+        self.assertIn("total 2 events across 2 tables", data["headline"][2])
+        self.assertTrue(data["headline"][0].startswith("Date 2026-10-19, window 07:00–21:00"))
+        b51 = next(item for item in data["summary"] if item["table_id"] == "B51")
+        self.assertEqual((b51["first_round_no"], b51["last_round_no"]), ("thirteenth", "thirteenth"))
+        with tempfile.TemporaryDirectory() as temporary:
+            path, _ = export_streak_window(self.conn, date(2026, 10, 19), "UNIT_TEST", temporary,
+                                           "00:00", "24:00", "BANKER")
+            with ZipFile(path) as workbook:
+                strings = workbook.read("xl/sharedStrings.xml").decode("utf-8")
+            self.assertIn("thirteenth", strings)
+            self.assertIn("Banker (red)", strings)
+            self.assertIn("2026-10-19 07:05:00", strings)  # local time of the 13th result
+            self.assertIn("Tie skipped", strings)
+
+    def test_monitor_dom_prints_report_when_interrupted(self):
+        import contextlib, io, sys
+        from datetime import datetime, timedelta, timezone
+        from unittest import mock
+        import agent.cli as cli
+        now = datetime.now(timezone.utc)
+        for index in range(13):
+            stamp = (now - timedelta(seconds=13 - index)).isoformat()
+            self.add("B51", f"exit-{index}", "BANKER", stamp)
+        with tempfile.TemporaryDirectory() as temporary:
+            config = Path(temporary) / "source.yaml"
+            config.write_text("source_id: UNIT_TEST\nreader: lobby_counters\nurl: http://127.0.0.1/\n"
+                              "viewport: {width: 800, height: 600}\ntables: [{id: B51}]\n", encoding="utf-8")
+            url = f"{self.conninfo} options='-csearch_path={self.schema}'".strip()
+
+            def interrupted(coroutine):
+                coroutine.close()
+                raise KeyboardInterrupt
+
+            argv = ["agent.cli", "monitor-dom", "--config", str(config), "--database-url", url,
+                    "--report-on-exit", "--report-start", "00:00", "--report-end", "24:00",
+                    "--report-dir", temporary]
+            output = io.StringIO()
+            with mock.patch.object(sys, "argv", argv), mock.patch.object(cli.asyncio, "run", interrupted),                     contextlib.redirect_stdout(output):
+                cli.main()
+            text = output.getvalue()
+            self.assertIn("monitor_stopped reason=STOPPED_BY_OPERATOR", text)
+            self.assertIn("(reached_13_strict_v1): Banker 1, Player 0", text)
+            self.assertTrue(list(Path(temporary).glob("baccarat_streak13_*.xlsx")))
+
     def test_red_window_rejects_mixed_sources_for_same_table(self):
         self.add("B51", "one", "BANKER", "2026-10-19T00:00:00Z")
         insert_verified_round(self.conn, table_id="B51", round_id="other", result="BANKER",
@@ -195,6 +255,33 @@ class PostgreSQLPipelineTests(unittest.TestCase):
         self.assertEqual(coordinator.process_frame(missing, adapter)["S01"], "GAP")
         self.assertEqual(self.conn.execute("SELECT COUNT(*) AS n FROM confirmed_rounds").fetchone()["n"], 0)
         self.assertEqual(self.conn.execute("SELECT COUNT(*) AS n FROM source_gaps").fetchone()["n"], 1)
+        # A continuing absence adds no gap rows; a new absence after reappearing does.
+        for index, tables in ((3, []), (4, []), (5, payload["tables"]), (6, [])):
+            coordinator.process_frame(CapturedFrame("DEMO_STRUCTURED", f"f{index}", f"2026-10-19T00:00:{index * 5:02d}Z",
+                                                    f"demo://{index}", payload={"tables": tables}), adapter)
+        self.assertEqual(self.conn.execute("SELECT COUNT(*) AS n FROM source_gaps").fetchone()["n"], 2)
+
+    def test_auto_tables_grow_and_gap_once_per_absence(self):
+        adapter = StructuredExportAdapter("DEMO_STRUCTURED")
+        coordinator = SourceCoordinator(self.conn, "DEMO_STRUCTURED", set(), auto_tables=True)
+
+        def state(table):
+            return {"table_id": table, "shoe_id": "s", "round_id": "1", "phase": "BETTING",
+                    "final_result": None, "roadmap_revision": "r"}
+
+        frames = [["B06"], ["B06", "A36"], ["A36"], ["A36"], ["A36", "B06"]]
+        results = []
+        for index, tables in enumerate(frames):
+            frame = CapturedFrame("DEMO_STRUCTURED", f"a{index}", f"2026-10-19T00:00:{index * 5:02d}Z",
+                                  f"demo://{index}", payload={"tables": [state(t) for t in tables]})
+            results.append(coordinator.process_frame(frame, adapter))
+        self.assertEqual(results[0], {"B06": "OBSERVED"})
+        self.assertEqual(results[2], {"A36": "OBSERVED", "B06": "GAP"})
+        self.assertEqual(coordinator.expected_tables, {"B06", "A36"})
+        gaps = self.conn.execute("SELECT table_id, reason FROM source_gaps").fetchall()
+        self.assertEqual([(g["table_id"], g["reason"]) for g in gaps], [("B06", "TABLE_MISSING")])
+        with self.assertRaises(ValueError):
+            SourceCoordinator(self.conn, "DEMO_STRUCTURED", set())
 
     def test_restart_requires_new_phase_cycle(self):
         adapter = StructuredExportAdapter("DEMO_STRUCTURED", trusted_round_ids=True)

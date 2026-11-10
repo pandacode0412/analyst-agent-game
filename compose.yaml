@@ -63,6 +63,17 @@ services:
   monitor-dom:
     <<: *agent
     depends_on: *db_ready
+    # Only this job receives site credentials and the saved login session (docs/17).
+    env_file:
+      - .env
+      - path: secrets/site.env
+        required: false
+    volumes:
+      - ./output:/app/output
+      - ./config:/app/config:ro
+      - ./assets:/app/assets:ro
+      - ./samples:/app/samples:ro
+      - ./secrets:/app/secrets
     command: ["python", "-m", "agent.cli", "monitor-dom", "--config", "config/real_dom.example.yaml", "--iterations", "3"]
 
   replay-export-demo:
